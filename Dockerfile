@@ -6,11 +6,12 @@ RUN \
   apt-get install -y --no-install-recommends \
     wget \
     restic \
+    ca-certificates \
     mariadb-client-10.5 \
     postgresql-client-13 \
   && \
   TMP="$(mktemp)" && \
-    wget --no-check-certificate -O "${TMP}" 'https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian11-x86_64-100.5.4.deb' && \
+    wget -O "${TMP}" 'https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian11-x86_64-100.5.4.deb' && \
     dpkg -i "${TMP}" && \
     rm "${TMP}" \
   && \

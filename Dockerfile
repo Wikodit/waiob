@@ -4,6 +4,7 @@ RUN \
   echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends \
+    jq \
     wget \
     restic \
     ca-certificates \

@@ -56,12 +56,12 @@ Restore a specified snapshots.
 
 **Options**
 
-* `snapshotId` - Required, the snapshot id found with the `list` action
+* `--snapshotId {snapshotId}` ou `-s {snapshotId}` - Required, the snapshot id found with the `list` action
 
 **Exemple**
 
 ```
-docker run --rm -ti --env-file ./wik-aio-backup.env wik-aio-backup restore -- 12345678
+docker run --rm -ti --env-file ./wik-aio-backup.env wik-aio-backup restore -- --snapshotId=12345678
 ```
 
 ## Environment variables

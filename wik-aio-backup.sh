@@ -5,25 +5,105 @@
 set -e
 set -uo pipefail
 
-BIN_PATH=$(cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd)
-# PROJECT_NAME=${PWD##*/}
+export ACTION="help"
+export SNAPSHOT_ID=""
+export TAGS=()
+export EXCLUDED_TAGS=()
+export RESTIC_ARGS=""
 
-export AUTO_CLEAN=`[[ "${WAIOB_DISABLE_AUTO_CLEAN}" == "1" ]] && echo "0" || echo "1"`
+export AUTO_CLEAN=`[[ "${WAIOB_DISABLE_AUTO_CLEAN:-"0"}" == "1" ]] && echo "0" || echo "1"`
 
 export SYSLOG_FACILITY="${WAIOB_SYSLOG_FACILITY:-"local0"}"
 export SYSLOG_LEVEL="${WAIOB_SYSLOG_LEVEL:-"5"}"
 
+export RESTIC_REPOSITORY_VERSION="${WAIOB_RESTIC_REPOSITORY_VERSION:-"2"}"
+export ADAPTER="${WAIOB_ADAPTER:-"fs"}"
+
+############
+# FS
+####
+
+function backup_fs () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+function restore_fs () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+############
+# MySQL
+####
+
+function backup_mysql () {
+  local adapter_args=()
+  local restic_args=("--stdin" "--stdin-filename" "database.sql")
+
+  mysqldump ${adapter_args[@]} | restic backup ${restic_args[@]}
+}
+
+function restore_mysql () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+############
+# PostgreSQL
+####
+
+function backup_pg () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+function restore_pg () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+############
+# Mongo
+####
+
+function backup_mongo () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+function restore_mongo () {
+  error "${ACTION}_${ADAPTER} not implemented yet"
+}
+
+############
+# Common
+####
+
+function backup ()  { call "backup_${ADAPTER}"; }
+function restore () { call "restore_${ADAPTER}"; }
+
+function list () {
+  error "${ACTION} not implemented yet"
+}
+
+function prune () {
+  error "${ACTION} not implemented yet"
+}
+
+function forget () {
+  error "${ACTION} not implemented yet"
+}
 
 function main () {
   [[ -z "$ACTION" ]] \
     && error "No action defined" 64
 
-  echo "ACTION: $ACTION"
-  echo "SNAPSHOT_ID: $SNAPSHOT_ID"
-  echo "TAGS: ${TAGS[@]}"
-  echo "AUTO_CLEAN: $AUTO_CLEAN"
+  debug "\$ACTION=$ACTION"
+  debug "\$ADAPTER=$ADAPTER"
+  debug "\$SNAPSHOT_ID=$SNAPSHOT_ID"
+  debug "\$TAGS=(${TAGS[@]})"
+  debug "\$EXCLUDED_TAGS=(${TAGS[@]})"
+  debug "\$AUTO_CLEAN=$AUTO_CLEAN"
+  debug "\$RESTIC_ARGS=$RESTIC_ARGS"
+  debug "\$RESTIC_ARGS=$RESTIC_ARGS"
+  debug "\$RESTIC_REPOSITORY_VERSION=$RESTIC_REPOSITORY_VERSION"
 
-  exception "nothing to do yet"
+  call "${ACTION}"
 }
 
 
@@ -34,8 +114,17 @@ function fetch_args () {
       -h|--help)
         show_help
         ;;
-      backup|restore|list)
-        export ACTION="$1"
+      backup|restore|list|prune|forget)
+        ACTION="$1"
+        shift
+        ;;
+      -a)
+        shift
+        export ADAPTER="$1"
+        shift
+        ;;
+      --adapter=*)
+        export ADAPTER=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
       -s)
@@ -56,8 +145,24 @@ function fetch_args () {
         export TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
         shift
         ;;
+      --exclude-tag=*)
+        export EXCLUDED_TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+        shift
+        ;;
       --no-clean|--clean)
         export AUTO_CLEAN=`[[ ${AUTO_CLEAN} != "1" && "$1" == "--clean" || "$1" != "--no-clean" ]] && echo "1" || echo "0"`
+        shift
+        ;;
+      --verbose|-v)
+        export SYSLOG_LEVEL=6
+        shift
+        ;;
+      --debug|-d)
+        export SYSLOG_LEVEL=7
+        shift
+        ;;
+      --log-level=*)
+        export SYSLOG_LEVEL="$1"
         shift
         ;;
       --)
@@ -91,18 +196,21 @@ Usage:
 
   "{action}" can be :
     * backup - launch the backup, this command will also clean old backups if a retention policy has been set in the env.
-    * prune - prune all backups depending on the retention policy (do not clean anything if no retention policy)
-    * list - list all available snapshots (can use --tags to filter)
     * restore - restore a specified snapshots
-    * delete - remove some snapshots
+    * list - list all available snapshots (can use --tags to filter)
+    * prune - forget all backups depending on the retention policy (do not clean anything if no retention policy)
+    * forget - remove some snapshots
 
 Options:
   -h, --help                      show brief help
+  -a adapter, --adapter=adapter   override WAIOB_ADAPTER
   -s id, --snapshotId=id          use a specific snapshot (restore action only)
   -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)--exclude-tag=tag               filer excluding this tag (or tags, option can be used multiple time)
   --no-clean                      prevent the cleaning after all actions (and act as a dry-run for prune action)
   --clean                         trigger the cleaning after all action (or act as a dry-run for prune action), for use with `WAIOB_DISABLE_AUTO_CLEAN` env variable
-  --verbose                       set the logging level to debug (see WAIOB_SYSLOG_LEVEL)
+  -d, --debug                     set the logging level to debug (see WAIOB_SYSLOG_LEVEL)
+  -v, --verbose                   set the logging level to info (see WAIOB_SYSLOG_LEVEL)
+  --log-level=level               set the logging level (see WAIOB_SYSLOG_LEVEL)
 
 Environment:
 
@@ -149,8 +257,8 @@ Examples:
   wik-aio-backup list mysql -t=2022 --no-clean
   wik-aio-backup restore mysql -s 123456 --no-clean
   wik-aio-backup prune mysql --exclude-tag=periodic-backup
-  wik-aio-backup delete mysql -t 2021
-  wik-aio-backup delete mysql -s 123456
+  wik-aio-backup forget mysql -t 2021
+  wik-aio-backup forget mysql -s 123456
 
 Author:
   Wikodit - Jeremy Trufier <jeremy@wikodit.fr>
@@ -162,65 +270,53 @@ EOF
 #   log <level> <message>
 #
 # exemple:
-#   log error "this is an error"
-#   log debug "too much verbosity here"
+#   log 3 "this is an error"
+#   log 7 "too much verbosity here"
 function log () {
-  local upper="$(echo "${1}" | awk '{print toupper($0)}')";
+  local levels=( "emerg"  "alert"  "crit"   "error"  "warn"   "notice" "info"   "debug"  )
+  local colors=( "\e[35m" "\e[35m" "\e[35m" "\e[31m" "\e[33m" "\e[39m" "\e[32m" "\e[36m" )
+
+  local level="${1}"
   shift 1;
   local msg="${@}";
 
-  local -A levels;
-  levels['DEBUG']=7;
-  levels['INFO']=6;
-  levels['NOTICE']=5;
-  levels['WARN']=4;
-  levels['ERROR']=3;
-  levels['CRIT']=2;
-  levels['ALERT']=1;
-  levels['EMERG']=0; # Should never be used
-
-  local -A colors;
-  colors["DEBUG"]="\033[34m"  # Blue
-  colors["INFO"]="\033[32m"   # Green
-  colors["NOTICE"]=""         # White
-  colors["WARN"]="\033[33m"   # Yellow
-  colors["ERROR"]="\033[31m"  # Red
-  colors["CRIT"]="\033[31m"   # Red
-  colors["ALERT"]="\033[31m"  # Red
-  colors["EMERG"]="\033[31m"  # Red
-  colors["RESET"]="\033[0m" # Reset
-
-  local level="${levels[${upper}]:-5}"
-  
   # Silence logging if level to high
   (( "${level}" > "${SYSLOG_LEVEL}" )) && return 0;
 
   # Redirect to stdout/stderr if in a tty
   if tty -s; then
-    local std="${colors[${upper}]}$(date "+%F %T") [${upper}] ${msg}${colors["RESET"]}"
+    local std="${colors[${level}]}$(date "+%F %T") [${levels[level]:-3}]\t${msg}\e[0m"
     (( "${level}" > "3" )) && echo -e "${std}" || >&2 echo -e "${std}" # stdout or stderr
   fi
 
   # In any case redirect to logger
-  logger -t ${0##*/}[$$] -p "${SYSLOG_FACILITY}.${SYSLOG_LEVEL}" "${msg}";
+  logger -t ${0##*/}[$$] -p "${SYSLOG_FACILITY}.${levels[level]:-3}" "${msg}";
 }
 
-# Some helpers
-function debug   () { log debug   $@ }
-function info    () { log info    $@ }
-function notice  () { log notice  $@ }
-function warning () { log warning $@ }
-function error   () { log error   $@ }
+# Some logging helpers
+function debug   () { log 7 $@; }
+function info    () { log 6 $@; }
+function notice  () { log 5 $@; }
+function warning () { log 4 $@; }
+function error   () { log 3 $@; }
 function exception () {
-  log crit $1
+  log 2 $1
 
   # if in terminal, we can show the help
   if tty -s; then
-    echo -e "\nCheck help with -h"
+    notice "check help with -h"
     #show_help
   fi
 
   exit ${2:-1}
+}
+
+function call() {
+  local callee="${1}"
+  local callee_args="${@}"
+  debug "${callee}: start"
+  ($callee_args)
+  debug "${callee}: end"
 }
 
 # Launch the script

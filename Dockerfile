@@ -1,3 +1,18 @@
+FROM golang:1.19
+
+ARG RESTIC_COMMIT="f0bb4f8708b1e09e09897463d70b5c89b20eec01"
+
+WORKDIR /build
+
+RUN \
+  git init -b main && \
+  git remote add origin https://github.com/restic/restic && \
+  git fetch --depth 1 origin "$RESTIC_COMMIT" && \
+  git reset --hard FETCH_HEAD && \
+  unset GOPATH && \
+  go run build.go
+
+#---
 FROM debian:stable-20220801-slim
 
 RUN \
@@ -21,4 +36,8 @@ RUN \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
+COPY --from=0 /build/restic /usr/local/bin/
+COPY wik-aio-backup.sh /usr/local/bin/wik-aio-backup
+
 ENTRYPOINT ["/bin/sh", "-c"]
+CMD ["wik-aio-backup"]

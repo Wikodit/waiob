@@ -39,5 +39,5 @@ RUN \
 COPY --from=0 /build/restic /usr/local/bin/
 COPY wik-aio-backup.sh /usr/local/bin/wik-aio-backup
 
-ENTRYPOINT ["/bin/sh", "-c"]
-CMD ["wik-aio-backup"]
+ENTRYPOINT ["wik-aio-backup"]
+CMD ["--help"]

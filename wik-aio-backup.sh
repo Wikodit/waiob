@@ -1,60 +1,148 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Author: Jeremy Trufier <jeremy@trufier.com>
 
-set -e
-set -uo pipefail
+set -euo pipefail
+# set -x # uncomment for xtrem debugging with high cafeine level requirement
+
+export IS_IN_TTY=$(tty -s && echo 1 || echo 0)
 
 export ACTION="help"
-export SNAPSHOT_ID=""
+export SNAPSHOT_ID="${SNAPSHOT_ID:-""}"
 export TAGS=()
-export EXCLUDED_TAGS=()
-export RESTIC_ARGS=""
+# export EXCLUDED_TAGS=()
+export RESTIC_ARGS=()
+export ADAPTER_ARGS=()
 
 export AUTO_CLEAN=`[[ "${WAIOB_DISABLE_AUTO_CLEAN:-"0"}" == "1" ]] && echo "0" || echo "1"`
 
 export SYSLOG_FACILITY="${WAIOB_SYSLOG_FACILITY:-"local0"}"
 export SYSLOG_LEVEL="${WAIOB_SYSLOG_LEVEL:-"5"}"
 
+export RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-""}"
+export RESTIC_PASSWORD="${RESTIC_PASSWORD:-""}"
 export RESTIC_REPOSITORY_VERSION="${WAIOB_RESTIC_REPOSITORY_VERSION:-"2"}"
 export ADAPTER="${WAIOB_ADAPTER:-"fs"}"
+
+export PREPARED_RESTIC_ARGS=()
+
+export RETURN_VALUE=""
 
 ############
 # FS
 ####
 
-function backup_fs () {
-  error "${ACTION}_${ADAPTER} not implemented yet"
+# Validate env and variables
+validate_config_fs() {
+  [[ -z "${FS_ROOT:-}" ]] \
+    && exception "missing FS_ROOT environment variable" 64
+  return 0
 }
 
-function restore_fs () {
-  error "${ACTION}_${ADAPTER} not implemented yet"
+backup_fs () {
+  call restic ${PREPARED_RESTIC_ARGS[@]} backup "${FS_ROOT}"
+}
+
+restore_fs () {
+  call restic ${PREPARED_RESTIC_ARGS[@]} restore "${SNAPSHOT_ID}" --target "${FS_ROOT}"
 }
 
 ############
 # MySQL
 ####
 
-function backup_mysql () {
-  local adapter_args=()
-  local restic_args=("--stdin" "--stdin-filename" "database.sql")
-
-  mysqldump ${adapter_args[@]} | restic backup ${restic_args[@]}
+# Validate env and variables
+validate_config_mysql() {
+  # var_names=("$@")
+  # for var_name in "${var_names[@]}"; do
+  #     [ -z "${!var_name}" ] && echo "$var_name is unset." && var_unset=true
+  # done
+  return 0
 }
 
-function restore_mysql () {
-  error "${ACTION}_${ADAPTER} not implemented yet"
+# To avoid password prompt or password diffusion in the process list, we create an option file
+# return location of file
+create_mysql_option_file() {
+  if [ -z "${!DB_CONFIG_*}" ]; then
+    notice "no DB_CONFIG_* environment variables, connexion may be unsuccessful"
+    return 0 # nothing to do
+  fi
+
+  tmp=$(mktemp)
+  sections=("mysql" "client")
+
+  for section in ${sections[@]}; do
+    echo "[$section]" >> $tmp
+    for env_var_name in ${!DB_CONFIG_*}; do
+      local lower_name=$(echo "${env_var_name#DB_CONFIG_}" | awk '{print tolower($0)}')
+      echo "${lower_name}"="${!env_var_name}" >> $tmp
+    done
+    echo -ne "\n" >> $tmp
+  done
+
+  if is_debug; then
+    debug "created mysql option file at location $tmp"
+    debug "\t┌─────────────────────────────"
+    cat $tmp | while read -r line; do debug "\t│ $line"; done
+    debug "\t└─────────────────────────────"
+  fi
+
+  RETURN_VALUE="${tmp}"
+
+  return 0
+}
+
+backup_mysql () {
+  call create_mysql_option_file
+  local option_file="${RETURN_VALUE}"
+
+  local adapter_args=(\
+    "--defaults-extra-file=${option_file}"\
+  )
+  
+  local db_filename="${DB_DATABASE:-"database"}.sql"
+  local restic_args=(\
+    ${PREPARED_RESTIC_ARGS[@]}\
+    "--stdin"\
+    "--stdin-filename"\
+    "${db_filename}"\
+  )
+
+  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} backup || exception "backup has failed, check with -d to debug" 1 2
+}
+
+restore_mysql () {
+  call create_mysql_option_file
+  local option_file="${RETURN_VALUE}"
+
+  local adapter_args=(\
+    "--defaults-extra-file=${option_file}"\
+  )
+
+  local db_filename="${DB_DATABASE:-"database"}.sql"
+  local restic_args=(\
+    ${PREPARED_RESTIC_ARGS[@]}\
+    "--path"\
+    "/${db_filename}"\
+  )
+
+  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}"  || exception "restoring has failed, check with -d to debug" 1 2
 }
 
 ############
 # PostgreSQL
 ####
 
-function backup_pg () {
+# Validate env and variables
+validate_config_pg() {
+  return 0
+}
+
+backup_pg () {
   error "${ACTION}_${ADAPTER} not implemented yet"
 }
 
-function restore_pg () {
+restore_pg () {
   error "${ACTION}_${ADAPTER} not implemented yet"
 }
 
@@ -62,11 +150,16 @@ function restore_pg () {
 # Mongo
 ####
 
-function backup_mongo () {
+# Validate env and variables
+validate_config_mongo() {
+  return 0
+}
+
+backup_mongo () {
   error "${ACTION}_${ADAPTER} not implemented yet"
 }
 
-function restore_mongo () {
+restore_mongo () {
   error "${ACTION}_${ADAPTER} not implemented yet"
 }
 
@@ -74,81 +167,184 @@ function restore_mongo () {
 # Common
 ####
 
-function backup ()  { call "backup_${ADAPTER}"; }
-function restore () { call "restore_${ADAPTER}"; }
+# Usage get_restic_args backup toto
+prepare_restic_args() {
+  PREPARED_RESTIC_ARGS+=(\
+    "${RESTIC_ARGS[@]}"\
+    "${TAGS[@]/#/--tag=}"\
+    "${@}"\
+  )
+  
+  debug "PREPARED_RESTIC_ARGS=${PREPARED_RESTIC_ARGS[@]}"
+  return 0
+}
 
-function list () {
+# Validate env and variables
+validate_config_common() {
+  [[ -z "$RESTIC_REPOSITORY" ]] \
+    && exception "missing RESTIC_REPOSITORY environment variable" 64
+  [[ -z "$RESTIC_PASSWORD" ]] \
+    && exception "missing RESTIC_PASSWORD environment variable" 64
+  [[ -z "$ADAPTER" ]] \
+    && exception "missing -a|--adapter option or WAIOB_ADAPTER environment variable" 64
+  return 0
+}
+
+# Backup entrypoint
+backup () {
+  call validate_config_${ADAPTER}
+  call prepare_restic_args
+  call ensure_repository true
+  call "backup_${ADAPTER}";
+}
+
+# Restore entrypoint
+restore () {
+  [[ -z "$SNAPSHOT_ID" ]] \
+    && exception "missing --snapshotId|-s option or SNAPSHOT_ID environment variable, 'latest' is a valid snaphotId value" 64
+
+  call validate_config_${ADAPTER}
+  call prepare_restic_args
+  call ensure_repository
+  call "restore_${ADAPTER}";
+}
+
+# List snapshots
+list () {
+  call prepare_restic_args
+  call restic "${PREPARED_RESTIC_ARGS[@]}" snapshots
+}
+
+# Forget password using retention policies
+prune () {
+  call prepare_restic_args
+  call ensure_repository
   error "${ACTION} not implemented yet"
 }
 
-function prune () {
+# Forget specific snapshots
+forget () {
+  call prepare_restic_args
+  call ensure_repository
   error "${ACTION} not implemented yet"
 }
 
-function forget () {
-  error "${ACTION} not implemented yet"
+
+# Check if the repository is created and available
+# try to init if true is given as first argument
+ensure_repository() {
+  if is_repository_exists; then
+    info "repository ${RESTIC_REPOSITORY} is ready"
+    return 0
+  fi
+
+  if [ ${1:-false} != true ]; then
+    exception "repository ${RESTIC_REPOSITORY} is not reachable or does not exists"
+  fi
+
+  warn "repository ${RESTIC_REPOSITORY} does not exists, attempt to initialized it..."
+
+  if ! init_repository; then
+    exception "${RESTIC_REPOSITORY} is not available or could not be initialized, check config, authorizations and network access" 2
+  fi
 }
 
-function main () {
+is_repository_exists() {
+  # If repository has been inialized, fetching snapshots will work, otherwise it will fail
+  # with a dummy tag to avoid too much feedback
+  call_silent restic snapshots --tag="wik-aio-backup--never"
+  return $?
+}
+
+# Init restic repository
+init_repository() {
+  info "trying to initialize v${RESTIC_REPOSITORY_VERSION} repository at ${RESTIC_REPOSITORY}..."
+
+  call_silent restic init --repository-version ${RESTIC_REPOSITORY_VERSION} --repo ${RESTIC_REPOSITORY}
+
+  if (( $? == 0 )); then
+    info "repository ${RESTIC_REPOSITORY} has been initialized"
+    return 0
+  fi
+
+  error "repository ${RESTIC_REPOSITORY} could not be initialized"
+
+  return 1
+}
+
+# Launcher
+main () {
   [[ -z "$ACTION" ]] \
     && error "No action defined" 64
+
+  if (( ${SYSLOG_LEVEL} >= 6 )) && [[ ! " ${RESTIC_ARGS[*]} " =~ " --verbose " ]]; then
+    RESTIC_ARGS+=("--verbose")
+  fi
 
   debug "\$ACTION=$ACTION"
   debug "\$ADAPTER=$ADAPTER"
   debug "\$SNAPSHOT_ID=$SNAPSHOT_ID"
   debug "\$TAGS=(${TAGS[@]})"
-  debug "\$EXCLUDED_TAGS=(${TAGS[@]})"
+  # debug "\$EXCLUDED_TAGS=(${EXCLUDED_TAGS[@]})"
   debug "\$AUTO_CLEAN=$AUTO_CLEAN"
-  debug "\$RESTIC_ARGS=$RESTIC_ARGS"
-  debug "\$RESTIC_ARGS=$RESTIC_ARGS"
+  debug "\$RESTIC_ARGS=${RESTIC_ARGS[@]}"
+  debug "\$ADAPTER_ARGS=${ADAPTER_ARGS[@]}"
+  debug "\$RESTIC_REPOSITORY=$RESTIC_REPOSITORY"
   debug "\$RESTIC_REPOSITORY_VERSION=$RESTIC_REPOSITORY_VERSION"
 
+  validate_config_common
   call "${ACTION}"
 }
 
-
-function fetch_args () {
-  export TAGS=()
+# Fetch and treat cli args
+fetch_args () {
+  local args=${@}
   while test $# -gt 0; do
     case "$1" in
       -h|--help)
-        show_help
+        call help
+        shift
         ;;
       backup|restore|list|prune|forget)
         ACTION="$1"
-        shift
-        ;;
-      -a)
-        shift
-        export ADAPTER="$1"
         shift
         ;;
       --adapter=*)
         export ADAPTER=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
-      -s)
+      -a|--adapter)
         shift
-        export SNAPSHOT_ID="$1"
+        export ADAPTER="$1"
         shift
         ;;
       --snapshotId=*|--snapshotid=*)
         export SNAPSHOT_ID=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
-      -t)
+      -s|--snapshotId|--snapshotid)
         shift
-        export TAGS+=("$1")
+        export SNAPSHOT_ID="$1"
         shift
         ;;
       --tag=*)
         export TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
         shift
         ;;
-      --exclude-tag=*)
-        export EXCLUDED_TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+      -t|--tag)
+        shift
+        export TAGS+=("$1")
         shift
         ;;
+      # --exclude-tag=*)
+      #   export EXCLUDED_TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+      #   shift
+      #   ;;
+      # --exclude-tag)
+      #   shift
+      #   export EXCLUDED_TAGS+=("$1")
+      #   shift
+      #   ;;
       --no-clean|--clean)
         export AUTO_CLEAN=`[[ ${AUTO_CLEAN} != "1" && "$1" == "--clean" || "$1" != "--no-clean" ]] && echo "1" || echo "0"`
         shift
@@ -162,23 +358,40 @@ function fetch_args () {
         shift
         ;;
       --log-level=*)
-        export SYSLOG_LEVEL="$1"
+        export SYSLOG_LEVEL=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+        shift
+        ;;
+     --log-level)
+        shift
+        export SYSLOG_LEVEL+=("$1")
+        shift
+        ;;
+      --json)
+        warn 'compatibility with this kind of output is not guaranteed yet'
+        # @todo This check should go somewhere else, disabling it because does not need it right now
+        # if [ -x "$(command -v jq)" ]; then
+        RESTIC_ARGS+=("--json")
+        # else
+        #   warn 'jq is not installed, json output will not be available'
+        # fi
         shift
         ;;
       --)
         shift
-        export RESTIC_ARGS=$@
+        export ADAPTER_ARGS=($@)
         break
         ;;
       *)
-        REMAINING_ARG="$1"
+        RESTIC_ARGS+=("$1")
         shift
         ;;
     esac
   done
+
+  debug "Command: ${args}"
 }
 
-function show_help () {
+help () {
   cat <<EOF
 Wikodit AIO Backup, simplifies backup through restic.
 
@@ -192,7 +405,7 @@ Supported backup adapters:
 * Filesystem
 
 Usage:
-  wik-aio-backup {action} [options] [-- [restic_additional_args]]
+  wik-aio-backup {action} [options] [restic_additional_args] [ -- [adapter_additional_args]]]
 
   "{action}" can be :
     * backup - launch the backup, this command will also clean old backups if a retention policy has been set in the env.
@@ -204,13 +417,16 @@ Usage:
 Options:
   -h, --help                      show brief help
   -a adapter, --adapter=adapter   override WAIOB_ADAPTER
-  -s id, --snapshotId=id          use a specific snapshot (restore action only)
-  -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)--exclude-tag=tag               filer excluding this tag (or tags, option can be used multiple time)
+  -s id, --snapshotId=id          use a specific snapshot (restore action only), "latest" is a valid value
+  -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)
   --no-clean                      prevent the cleaning after all actions (and act as a dry-run for prune action)
-  --clean                         trigger the cleaning after all action (or act as a dry-run for prune action), for use with `WAIOB_DISABLE_AUTO_CLEAN` env variable
+  --clean                         trigger the cleaning after all action (or act as a dry-run for prune action), for use with WAIOB_DISABLE_AUTO_CLEAN env variable
   -d, --debug                     set the logging level to debug (see WAIOB_SYSLOG_LEVEL)
   -v, --verbose                   set the logging level to info (see WAIOB_SYSLOG_LEVEL)
   --log-level=level               set the logging level (see WAIOB_SYSLOG_LEVEL)
+  --json                          output json instead of human readable output
+  -*, --*                         all other restic available options
+  -- *                            all other adapter available options (ex: mysqldump additional options if adapter is mysql)
 
 Environment:
 
@@ -223,23 +439,24 @@ Environment:
     * RESTIC_REPOSITORY: The repository to store the snapshosts, exemple: s3:s3.gra.perf.cloud.ovh.net/backups/my-namespace/mysql
     * RESTIC_COMPRESSION: set compression level (repository v2), "auto", "max", "off"
     * RESTIC_\*: all other Restic possible env variables
-    * WAIOB_RESTIC_REPOSITORY_VERSION: default to 2 (restic >=v0.14), repository version
-    * WAIOB_DISABLE_AUTO_CLEAN: disabled by default, each action trigger an auto-clean of old snapshots if there is some retention policy, set to 1 to disable it by default, can still be enable afterwards with --clean
     * WAIOB_ADAPTER: can be
       - mysql - require mysqldump/mysql
       - pg - require pg_dump/pg_restore
       - mongo - require mongodump/mongorestore
       - fs
   
+  - FileSystem (FS):
+    * FS_ROOT: the root directory to backup from / restore to
+
   - MySQL/Mongo/PG:
-    * DB_HOST: the database host, default to database type default
-    * DB_PORT: the database port, default to database type default
-    * DB_USERNAME: the database username, default to database type default
-    * DB_PASSWORD: the database password, default to database type default
+    * DB_CONFIG_HOST: the database host, default to database type default
+    * DB_CONFIG_PORT: the database port, default to database type default
+    * DB_CONFIG_USER: the database username, default to database type default
+    * DB_CONFIG_PASSWORD: the database password, default to database type default
 
   - MySQL/PG:
-    * DB_DATABASES: databases list to backup (separated by spaces), default to all-databases if not specified
-    * DB_TABLES: backup specific tables (separated by spaces), DB_DATABASES should only contain one database
+    * DB_DATABASE: the database to backup, if you want to backup all databases, pass '-- --all-databases' at the end of the command, or '-- --databases DB1 DB2 DB3'
+    * DB_TABLES: list of tables to backup, by default all tables are backed up
     
   - Mongo:
     * DB_COLLECTIONS: which collections to backup (default to all collections)
@@ -248,17 +465,21 @@ Environment:
   - Other optional envs:
     * WAIOB_SYSLOG_FACILITY: define facility for syslog, default to local0
     * WAIOB_SYSLOG_LEVEL: define logging level, default to 5 "notice" (0=emergency, 1=alert, 2=crit, 3=error, 4=warning, 5=notice, 6=info, 7=debug), --verbose override the level to 7
+    * WAIOB_RESTIC_REPOSITORY_VERSION: default to 2 (restic >=v0.14), repository version
+    * WAIOB_DISABLE_AUTO_CLEAN: disabled by default, each action trigger an auto-clean of old snapshots if there is some retention policy, set to 1 to disable it by default, can still be enable afterwards with --clean
+    * WAIOB_RETENTION_POLICY: define retention policy, default to none, if some tags have been defined, they will be used and only the snapshot with the same tags may be removed. An exemple: "hourly=24 daily=7 weekly=5 monthly=12 yearly=10 tag=manual last=5", this will keep the latest backup for each hour in the last 24h, the last backup of each day in the last 7 days, the last backup each week in the last 5 weeks, last backup per month for a year, and the last backup of each year for 10 years, it also keep all backups with the tag "manual" and ensure the last 5 backups are also kept.
 
 Examples:
-  wik-aio-backup backup mysql
-  wik-aio-backup backup mysql --no-clean -- --tag=2022 --tag=manual-backup
-  wik-aio-backup backup mysql -t 2022 -t manual-backup --no-clean -- --dry-run --verbose
-  wik-aio-backup backup mysql -t 2022 -t manual-backup --no-clean -- --exclude="node_modules"
-  wik-aio-backup list mysql -t=2022 --no-clean
+  wik-aio-backup backup -a fs
+  wik-aio-backup backup -a fs --no-clean --tag=2022 --tag=app --tag=manual-backup
+  wik-aio-backup backup -a fs -t 2022 -t manual-backup -t app --no-clean --dry-run --verbose
+  wik-aio-backup backup -a fs -t 2022 -t manual-backup -t app --no-clean --exclude="node_modules"
+  wik-aio-backup backup -a mysql -t 2022 -t manual-backup -t db --dry-run -- -C --add-drop-database
+  wik-aio-backup list -a mysql -t=2022 --no-clean
   wik-aio-backup restore mysql -s 123456 --no-clean
-  wik-aio-backup prune mysql --exclude-tag=periodic-backup
-  wik-aio-backup forget mysql -t 2021
-  wik-aio-backup forget mysql -s 123456
+  wik-aio-backup prune -a mysql --exclude-tag=periodic-backup
+  wik-aio-backup forget -a mysql -t 2021
+  wik-aio-backup forget -a mysql -s 123456
 
 Author:
   Wikodit - Jeremy Trufier <jeremy@wikodit.fr>
@@ -272,7 +493,7 @@ EOF
 # exemple:
 #   log 3 "this is an error"
 #   log 7 "too much verbosity here"
-function log () {
+log () {
   local levels=( "emerg"  "alert"  "crit"   "error"  "warn"   "notice" "info"   "debug"  )
   local colors=( "\e[35m" "\e[35m" "\e[35m" "\e[31m" "\e[33m" "\e[39m" "\e[32m" "\e[36m" )
 
@@ -284,7 +505,7 @@ function log () {
   (( "${level}" > "${SYSLOG_LEVEL}" )) && return 0;
 
   # Redirect to stdout/stderr if in a tty
-  if tty -s; then
+  if [[ "${IS_IN_TTY}" == "1" ]]; then
     local std="${colors[${level}]}$(date "+%F %T") [${levels[level]:-3}]\t${msg}\e[0m"
     (( "${level}" > "3" )) && echo -e "${std}" || >&2 echo -e "${std}" # stdout or stderr
   fi
@@ -294,29 +515,56 @@ function log () {
 }
 
 # Some logging helpers
-function debug   () { log 7 $@; }
-function info    () { log 6 $@; }
-function notice  () { log 5 $@; }
-function warning () { log 4 $@; }
-function error   () { log 3 $@; }
-function exception () {
-  log 2 $1
+debug   () { log 7 $@; }
+info    () { log 6 $@; }
+notice  () { log 5 $@; }
+warn    () { log 4 $@; }
+error   () { log 3 $@; }
+is_debug() { (( "${SYSLOG_LEVEL}" == "7" )) && return 0 || return 1; }
+
+# Usage: exception <message> <code> <level=3>
+exception () {
+  log ${3:-3} $1
 
   # if in terminal, we can show the help
   if tty -s; then
     notice "check help with -h"
-    #show_help
+    #help
   fi
 
   exit ${2:-1}
 }
 
-function call() {
+call() {
   local callee="${1}"
+  shift
   local callee_args="${@}"
-  debug "${callee}: start"
-  ($callee_args)
+  debug "${callee}: start, args: [${@}]"
+  $callee $callee_args
+  local result=$?
   debug "${callee}: end"
+  return $result
+}
+
+call_silent() {
+  if is_debug; then
+    call ${@}
+  else
+    call ${@} &> /dev/null
+  fi
+
+  local result=$?
+  return $result
+}
+
+call_silent_err() {
+  if is_debug; then
+    call ${@}
+  else
+    call ${@} 2> /dev/null
+  fi
+
+  return $?
 }
 
 # Launch the script

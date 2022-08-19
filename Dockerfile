@@ -37,7 +37,7 @@ RUN \
   rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY waoib.sh /usr/local/bin/waoib
+COPY waiob.sh /usr/local/bin/waiob
 
-ENTRYPOINT ["waoib"]
+ENTRYPOINT ["waiob"]
 CMD ["--help"]

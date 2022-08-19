@@ -7,6 +7,7 @@ set -euo pipefail
 
 export IS_IN_TTY=$(tty -s && echo 1 || echo 0)
 
+export FORCE="0"
 export ACTION="help"
 export SNAPSHOT_ID="${SNAPSHOT_ID:-""}"
 export TAGS=(${TAGS:-""})
@@ -23,6 +24,8 @@ export RESTIC_REPOSITORY="${RESTIC_REPOSITORY:-""}"
 export RESTIC_PASSWORD="${RESTIC_PASSWORD:-""}"
 export RESTIC_REPOSITORY_VERSION="${WAIOB_RESTIC_REPOSITORY_VERSION:-"2"}"
 export ADAPTER="${WAIOB_ADAPTER:-"fs"}"
+export MODE="${WAIOB_MODE:-"utility"}"
+export DB_LOCK="${WAIOB_DB_LOCK:-"1"}"
 
 export PREPARED_RESTIC_ARGS=()
 
@@ -55,6 +58,8 @@ restore_fs () {
 
 # Validate env and variables
 validate_config_mysql() {
+  validate_db_mode_dependencies "mysql" "mysqldump" "mysql"
+
   # var_names=("$@")
   # for var_name in "${var_names[@]}"; do
   #     [ -z "${!var_name}" ] && echo "$var_name is unset." && var_unset=true
@@ -100,7 +105,40 @@ backup_mysql () {
   call create_mysql_option_file
   local option_file="${RETURN_VALUE}"
 
+  if [[ "${MODE}" == "files" ]] then
+
+    if [[ ${DB_LOCK} == "1" ]]; then
+      notice "locking database"
+      exec 3> >(mysql --defaults-extra-file=${option_file})
+      # call mysql --defaults-extra-file=${option_file} -e "LOCK INSTANCE FOR BACKUP;" && info "success locking database" || exception "failed locking database"
+      echo "LOCK INSTANCE FOR BACKUP;" >&3
+
+      # todo check that, the idea was to ensure session is closed correctly, but maybe not needed
+      # imo, but need to be tested, if program is quit, session is killed and database is unlocked
+      # trap 'exec 3>&-' SIGINT SIGQUIT SIGTSTP
+    fi
+
+    backup_fs
+
+    local ret=${?}
+
+    if [[ ${DB_LOCK} == "1" ]]; then
+      notice "unlocking database"
+      # call mysql --defaults-extra-file=${option_file} -e "LOCK INSTANCE FOR BACKUP;" && info "success unlocking database" || exception "failed unlocking database" 1 2
+      echo "UNLOCK INSTANCE;" >&3
+      exec 3>&-
+
+      # todo check that, the idea was to ensure session is closed correctly, but maybe not needed
+      # imo, but need to be tested, if program is quit, session is killed and database is unlocked
+      # trap - SIGINT SIGQUIT SIGTSTP
+    fi
+
+    return ${ret}
+  fi
+
   local adapter_args=(\
+    "--single-transaction"\
+    "--skip-lock-tables"\
     "--defaults-extra-file=${option_file}"\
   )
   
@@ -120,6 +158,17 @@ backup_mysql () {
 restore_mysql () {
   call create_mysql_option_file
   local option_file="${RETURN_VALUE}"
+
+  if [[ "${MODE}" == "files" ]] then
+    if [[ "${FORCE}" != "1" ]]; then
+      call_silent mysql --defaults-extra-file=${option_file} -e "show database" && exception "on mode=files, database should not be running, pass --force to restore anyway or stop database before restoring"
+    fi
+    
+    restore_fs
+    local ret=${?}
+
+    return ${ret}
+  fi
 
   local adapter_args=(\
     "--defaults-extra-file=${option_file}"\
@@ -141,6 +190,7 @@ restore_mysql () {
 
 # Validate env and variables
 validate_config_pg() {
+  validate_db_mode_dependencies "psql" "pg_dump" "pg_restore"
   return 0
 }
 
@@ -158,6 +208,7 @@ restore_pg () {
 
 # Validate env and variables
 validate_config_mongo() {
+  validate_db_mode_dependencies "mongo" "mongodump" "mongorestore"
   return 0
 }
 
@@ -172,6 +223,22 @@ restore_mongo () {
 ############
 # Common
 ####
+
+# arg1=client command, arg2=restore command, arg3=backup command
+validate_db_mode_dependencies() {
+  if [[ "${MODE}" == "utility" ]]; then
+    if [ -x "$(command -v "${2}")" ] || [ -x "$(command -v "${3}")" ]; then
+      warn "${2} or ${3} is not installed, fallback to mode='files'"
+      MODE="files"
+    fi
+  fi
+
+  if [[ "${MODE}" == "files" ]]; then
+    if [[ "${DB_LOCK}" == "1" ]] && [ -x "$(command -v "${1}")" ]; then
+      exception "${1} is not installed, but needed to acquire a lock, if you really want to backup/restore without lock pass the --no-db-lock option" 64
+    fi
+  fi
+}
 
 # Usage get_restic_args backup toto
 prepare_restic_args() {
@@ -323,31 +390,52 @@ fetch_args () {
         ACTION="$1"
         shift
         ;;
+      mysql|pg|fs|mongo)
+        ADAPTER="$1"
+        shift
+        ;;
       --adapter=*)
-        export ADAPTER=`echo "$1" | sed -e 's/^[^=]*=//g'`
+        ADAPTER=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
       -a|--adapter)
         shift
-        export ADAPTER="$1"
+        ADAPTER="$1"
         shift
         ;;
       --snapshotId=*|--snapshotid=*)
-        export SNAPSHOT_ID=`echo "$1" | sed -e 's/^[^=]*=//g'`
+        SNAPSHOT_ID=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
       -s|--snapshotId|--snapshotid)
         shift
-        export SNAPSHOT_ID="$1"
+        SNAPSHOT_ID="$1"
         shift
         ;;
       --tag=*)
-        export TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+        TAGS+=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+        shift
+        ;;
+      --mode=*)
+        DB_BACKUP_MODE=`echo "$1" | sed -e 's/^[^=]*=//g'`
+        shift
+        ;;
+      --no-db-lock)
+        DB_LOCK="0"
+        shift
+        ;;
+      -f|--force)
+        FORCE="1"
+        shift
+        ;;
+      --mode|-mode)
+        shift
+        MODE="$1"
         shift
         ;;
       -t|--tag)
         shift
-        export TAGS+=("$1")
+        TAGS+=("$1")
         shift
         ;;
       # --exclude-tag=*)
@@ -360,24 +448,24 @@ fetch_args () {
       #   shift
       #   ;;
       --no-clean|--clean)
-        export AUTO_CLEAN=`[[ ${AUTO_CLEAN} != "1" && "$1" == "--clean" || "$1" != "--no-clean" ]] && echo "1" || echo "0"`
+        AUTO_CLEAN=`[[ ${AUTO_CLEAN} != "1" && "$1" == "--clean" || "$1" != "--no-clean" ]] && echo "1" || echo "0"`
         shift
         ;;
       --verbose|-v)
-        export SYSLOG_LEVEL=6
+        SYSLOG_LEVEL=6
         shift
         ;;
       --debug|-d)
-        export SYSLOG_LEVEL=7
+        SYSLOG_LEVEL=7
         shift
         ;;
       --log-level=*)
-        export SYSLOG_LEVEL=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
+        SYSLOG_LEVEL=(`echo "$1" | sed -e 's/^[^=]*=//g'`)
         shift
         ;;
      --log-level)
         shift
-        export SYSLOG_LEVEL+=("$1")
+        SYSLOG_LEVEL+=("$1")
         shift
         ;;
       --json)
@@ -392,7 +480,7 @@ fetch_args () {
         ;;
       --)
         shift
-        export ADAPTER_ARGS=($@)
+        ADAPTER_ARGS=($@)
         break
         ;;
       *)
@@ -409,7 +497,7 @@ help () {
   cat <<EOF
 Wikodit AIO Backup, simplifies backup through restic.
 
-It handles the restic repository initialization, as well as easy restore and easy backup of a variety of sources.
+It handles the restic repository initialization, as well as easy restore and easy backup of a variety of sources. It locks database and can be used to backup them using utility of fs
 
 Supported backup adapters:
 
@@ -419,21 +507,28 @@ Supported backup adapters:
 * Filesystem
 
 Usage:
-  wik-aio-backup {action} [options] [restic_additional_args] [ -- [adapter_additional_args]]]
+  wik-aio-backup <action> [adapter] [options] [restic_additional_args] [ -- [adapter_additional_args]]
 
-  "{action}" can be :
+  ? [] denotes optional
+
+  "<action>" can be :
     * backup - launch the backup, this command will also clean old backups if a retention policy has been set in the env.
     * restore - restore a specified snapshots
     * list - list all available snapshots (can use --tags to filter)
     * prune - forget all backups depending on the retention policy (do not clean anything if no retention policy)
     * forget - remove some snapshots
 
+  "[adapter]" can be 'mysql', 'pg', 'mongo', 'fs'
+
 Options:
   -h, --help                      show brief help
-  -a adapter, --adapter=adapter   override WAIOB_ADAPTER
+  -a adapter, --adapter=adapter   can be 'mysql', 'pg', 'mongo', 'fs'
+  -f, --force                     less safe, but force some actions even if not entirely possible, and avoid some checks
+  -m adapter, --mode=mode         can be 'files' or 'utility', default to 'utility' (no effect for 'fs' adapter). Utility uses mongodump, mysqldump, ... while 'files' backup database files. FS_ROOT is required with 'files' option
   -s id, --snapshotId=id          use a specific snapshot (restore action only), "latest" is a valid value
   -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)
   --no-clean                      prevent the cleaning after all actions (and act as a dry-run for prune action)
+  --no-db-lock                    when using mode=files, disable the database lock (hot backup), may result in data lost if the database is in use. This can be useful to backup a database that is not running and thus not reachable
   --clean                         trigger the cleaning after all action (or act as a dry-run for prune action), for use with WAIOB_DISABLE_AUTO_CLEAN env variable
   -d, --debug                     set the logging level to debug (see WAIOB_SYSLOG_LEVEL)
   -v, --verbose                   set the logging level to info (see WAIOB_SYSLOG_LEVEL)
@@ -441,6 +536,8 @@ Options:
   --json                          output json instead of human readable output
   -*, --*                         all other restic available options
   -- *                            all other adapter available options (ex: mysqldump additional options if adapter is mysql)
+
+  Note: `=` is optional in options and can be replaced by the next argument
 
 Environment:
 
@@ -466,17 +563,19 @@ Environment:
     * FS_ROOT: the root directory to backup from / restore to
 
   - MySQL/Mongo/PG:
+    * WAIOB_MODE: can be "files" or "utility", default to "utility", "utility" uses mongodump/mongorestore, and "files" backup database directory files. "files" is not compatible with DB_DATABASE, DB_TABLES, DB_COLLECTIONS...
+    * WAIOB_DB_LOCK: enable by default '1', disable to '0', with mode="files" it is strongly advised lock files to prevent data loss during backup (no effect for mode="utility")
     * DB_CONFIG_HOST: the database host, default to database type default
     * DB_CONFIG_PORT: the database port, default to database type default
     * DB_CONFIG_USER: the database username, default to database type default
     * DB_CONFIG_PASSWORD: the database password, default to database type default
+    * FS_ROOT: require only for mode=files, the root directory is necessary
 
   - MySQL/PG:
     * DB_DATABASE: the database to backup, if you want to backup all databases, pass '-- --all-databases' at the end of the command, or '-- --databases DB1 DB2 DB3'
     * DB_TABLES: list of tables to backup, by default all tables are backed up
     
   - Mongo:
-    * WAIOB
     * DB_COLLECTIONS: which collections to backup (default to all collections)
     * DB_TABLES: backup specific tables (separated by spaces), DB_DATABASES should only contain one database
 

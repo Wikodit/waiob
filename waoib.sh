@@ -9,7 +9,7 @@ export IS_IN_TTY=$(tty -s && echo 1 || echo 0)
 
 export ACTION="help"
 export SNAPSHOT_ID="${SNAPSHOT_ID:-""}"
-export TAGS=()
+export TAGS=(${TAGS:-""})
 # export EXCLUDED_TAGS=()
 export RESTIC_ARGS=()
 export ADAPTER_ARGS=()
@@ -41,10 +41,12 @@ validate_config_fs() {
 
 backup_fs () {
   call restic ${PREPARED_RESTIC_ARGS[@]} backup "${FS_ROOT}"
+  return $?
 }
 
 restore_fs () {
   call restic ${PREPARED_RESTIC_ARGS[@]} restore "${SNAPSHOT_ID}" --target "${FS_ROOT}"
+  return $?
 }
 
 ############
@@ -71,6 +73,7 @@ create_mysql_option_file() {
   tmp=$(mktemp)
   sections=("mysql" "client")
 
+  info "preparing mysql option file"
   for section in ${sections[@]}; do
     echo "[$section]" >> $tmp
     for env_var_name in ${!DB_CONFIG_*}; do
@@ -80,8 +83,9 @@ create_mysql_option_file() {
     echo -ne "\n" >> $tmp
   done
 
+  info "created mysql option file at location $tmp"
+
   if is_debug; then
-    debug "created mysql option file at location $tmp"
     debug "\t┌─────────────────────────────"
     cat $tmp | while read -r line; do debug "\t│ $line"; done
     debug "\t└─────────────────────────────"
@@ -107,8 +111,10 @@ backup_mysql () {
     "--stdin-filename"\
     "${db_filename}"\
   )
+  
+  debug "restic_args=${restic_args[@]}"
 
-  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} backup || exception "backup has failed, check with -d to debug" 1 2
+  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} backup
 }
 
 restore_mysql () {
@@ -126,7 +132,7 @@ restore_mysql () {
     "/${db_filename}"\
   )
 
-  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}"  || exception "restoring has failed, check with -d to debug" 1 2
+  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}"
 }
 
 ############
@@ -195,7 +201,7 @@ backup () {
   call validate_config_${ADAPTER}
   call prepare_restic_args
   call ensure_repository true
-  call "backup_${ADAPTER}";
+  call "backup_${ADAPTER}" && info "backup done" || exception "backup failed, enable verbose with -v or debug with -d" $? 2
 }
 
 # Restore entrypoint
@@ -206,7 +212,7 @@ restore () {
   call validate_config_${ADAPTER}
   call prepare_restic_args
   call ensure_repository
-  call "restore_${ADAPTER}";
+  call "restore_${ADAPTER}" && info "restore done" || exception "restore failed, enable verbose with -v or debug with -d" $? 2
 }
 
 # List snapshots
@@ -219,7 +225,15 @@ list () {
 prune () {
   call prepare_restic_args
   call ensure_repository
-  error "${ACTION} not implemented yet"
+
+  local restic_args=(\
+    ${PREPARED_RESTIC_ARGS[@]}\
+    ${WAIOB_RETENTION_POLICY[@]/#/--keep}\
+  )
+
+  debug "restic_args=${restic_args[@]}"
+  
+  #call restic "${restic_args[@]}" forget
 }
 
 # Forget specific snapshots
@@ -444,6 +458,9 @@ Environment:
       - pg - require pg_dump/pg_restore
       - mongo - require mongodump/mongorestore
       - fs
+
+  - Recommended:
+    * TAGS: list of tags to filter snapshots (ex: TAG="tag1 tag2")
   
   - FileSystem (FS):
     * FS_ROOT: the root directory to backup from / restore to
@@ -459,6 +476,7 @@ Environment:
     * DB_TABLES: list of tables to backup, by default all tables are backed up
     
   - Mongo:
+    * WAIOB
     * DB_COLLECTIONS: which collections to backup (default to all collections)
     * DB_TABLES: backup specific tables (separated by spaces), DB_DATABASES should only contain one database
 

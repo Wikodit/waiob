@@ -37,7 +37,7 @@ RUN \
   rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY wik-aio-backup.sh /usr/local/bin/wik-aio-backup
+COPY waoib.sh /usr/local/bin/waoib
 
-ENTRYPOINT ["wik-aio-backup"]
+ENTRYPOINT ["waoib"]
 CMD ["--help"]

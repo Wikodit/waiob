@@ -26,6 +26,10 @@ RUN \
     mariadb-client-10.5 \
     postgresql-client-13 \
   && \
+  wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - &&\
+  echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
+  apt-get update &&\
+  apt-get install -y --no-install-recommends mongodb-org-shell mongodb-org-tools && \
   TMP="$(mktemp)" && \
     wget -O "${TMP}" 'https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian11-x86_64-100.5.4.deb' && \
     dpkg -i "${TMP}" && \

@@ -10,7 +10,7 @@ export IS_IN_TTY=$(tty -s && echo 1 || echo 0)
 export FORCE="0"
 export ACTION="help"
 export SNAPSHOT_ID="${SNAPSHOT_ID:-""}"
-export TAGS=(${TAGS:-""})
+export TAGS=(${TAGS:-})
 # export EXCLUDED_TAGS=()
 export RESTIC_ARGS=()
 export ADAPTER_ARGS=()
@@ -26,6 +26,9 @@ export RESTIC_REPOSITORY_VERSION="${WAIOB_RESTIC_REPOSITORY_VERSION:-"2"}"
 export ADAPTER="${WAIOB_ADAPTER:-"fs"}"
 export MODE="${WAIOB_MODE:-"utility"}"
 export DB_LOCK="${WAIOB_DB_LOCK:-"1"}"
+
+export FS_RELATIVE="${FS_RELATIVE:-0}"
+export FS_ROOT="${FS_ROOT:-""}"
 
 export PREPARED_RESTIC_ARGS=()
 
@@ -43,7 +46,22 @@ validate_config_fs() {
 }
 
 backup_fs () {
-  call restic ${PREPARED_RESTIC_ARGS[@]} backup "${FS_ROOT}"
+  local restic_args=(\
+    ${PREPARED_RESTIC_ARGS[@]}\
+  )
+
+  local path=$(pwd)
+  if [[ "${FS_RELATIVE}" == "1" ]]; then
+    debug "fs relative enabled, cwd set to ${FS_ROOT}"
+    cd "${FS_ROOT}"
+    call restic ${restic_args[@]} backup "."
+    debug "fs relative enabled, cwd set to ${path}"
+    cd "${path}"
+  else
+    debug "fs relative disabled, storing absolute path in backup"
+    call restic ${restic_args[@]} backup "${FS_ROOT}"
+  fi
+
   return $?
 }
 
@@ -136,10 +154,10 @@ backup_mysql () {
   fi
 
   local adapter_args=(\
+    "--defaults-extra-file=${option_file}"\
     ${ADAPTER_ARGS[@]} \
     "--single-transaction"\
     "--skip-lock-tables"\
-    "--defaults-extra-file=${option_file}"\
     "${DB_DATABASE:-}"\
     ${DB_TABLES:-} \
   )
@@ -148,14 +166,13 @@ backup_mysql () {
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
     "--stdin"\
-    "--stdin-filename"\
-    "${db_filename}"\
+    "--stdin-filename=${db_filename}"\
   )
   
   debug "adapter_args=${adapter_args[@]}"
   debug "restic_args=${restic_args[@]}"
 
-  call_silent_err mysqldump ${adapter_args[@]} | restic ${restic_args[@]} backup
+  mysqldump ${adapter_args[@]} | restic ${restic_args[@]} backup
 }
 
 restore_mysql () {
@@ -163,7 +180,7 @@ restore_mysql () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    if [[ "${FORCE}" != "1" ]]; then
+    if is_force; then
       call_silent mysql --defaults-extra-file=${option_file} -e "show database" && exception "on mode=files, database should not be running, pass --force to restore anyway or stop database before restoring" 50 4
     fi
     
@@ -181,11 +198,10 @@ restore_mysql () {
   local db_filename="${DB_DATABASE:-"database"}.sql"
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    "--path"\
-    "/${db_filename}"\
+    "--path=/${db_filename}"\
   )
 
-  call_silent_err mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-} | restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}"
+  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-}
 }
 
 ############
@@ -232,7 +248,7 @@ backup_pg () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    [[ "${FORCE}" != "1" ]] &&\
+    is_force &&\
       call_silent pg_isready --passfile=${option_file} &&\
       exception "on mode=files, it is definitely not recommended to do a backup while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     backup_fs
@@ -247,8 +263,8 @@ backup_pg () {
   local db_filename="${DB_DATABASE:-"database"}.sql"
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    "--stdin-filename"\
-    "${db_filename}"\
+    "--stdin"\
+    "--stdin-filename=${db_filename}"\
   )
   
   debug "adapter_args=${adapter_args[@]}"
@@ -264,7 +280,7 @@ backup_pg () {
     cmd="pg_dump"
   fi
 
-  call_silent_err $cmd ${adapter_args[@]} | restic ${restic_args[@]} backup
+  $cmd ${adapter_args[@]} | restic ${restic_args[@]} backup
 }
 
 restore_pg () {
@@ -272,7 +288,7 @@ restore_pg () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    [[ "${FORCE}" != "1" ]] &&\
+    is_force &&\
       call_silent pg_isready --passfile=${option_file} &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     restore_fs
@@ -287,14 +303,13 @@ restore_pg () {
   local db_filename="${DB_DATABASE:-"database"}.sql"
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    "--path"\
-    "/${db_filename}"\
+    "--path=/${db_filename}"\
   )
   
   debug "adapter_args=${adapter_args[@]}"
   debug "restic_args=${restic_args[@]}"
 
-  call_silent_err restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" |pg_restore ${adapter_args[@]}
+  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | pg_restore ${adapter_args[@]}
 }
 
 ############
@@ -303,13 +318,13 @@ restore_pg () {
 
 # Validate env and variables
 validate_config_mongo() {
-  validate_db_mode_dependencies "mongo" "mongodump" "mongorestore"
+  validate_db_mode_dependencies "mongosh" "mongodump" "mongorestore"
   
   [[ "${FORCE}" == "1" ]] && return 0
 
-  [[ -z "$DB_MONGO_PASSWORD" ]] \
-    && exception "missing DB_MONGO_PASSWORD environment variable, or force with -f" 64
-  [[ -z "$DB_MONGO_URI" ]] \
+  # [[ -z "${DB_MONGO_PASSWORD:-}" ]] \
+    # && exception "missing DB_MONGO_PASSWORD environment variable, or force with -f" 64
+  [[ -z "${DB_MONGO_URI:-}" ]] \
     && exception "missing DB_MONGO_URI environment variable, or force with -f" 64
 
   return 0
@@ -320,7 +335,9 @@ validate_config_mongo() {
 create_mongo_option_file() {
   tmp=$(mktemp)
   chmod +600 "${tmp}"
-  echo -ne "password: "${DB_MONGO_PASSWORD}"\nuri: "${DB_MONGO_URI}"" > "${tmp}"
+  # echo -ne "password: "${DB_MONGO_PASSWORD}"\nuri: "${DB_MONGO_URI}"" > "${tmp}"
+  echo -ne "uri: "${DB_MONGO_URI}"" > "${tmp}"
+
 
   info "created mongo option file"
 
@@ -328,7 +345,7 @@ create_mongo_option_file() {
     debug "mongo option file location: ${tmp}"
     debug "\t┌─────────────────────────────"
     cat $tmp | while read -r line; do
-      debug "\t│ $(echo ${line} | sed -e 's/^password:.*$/password: ******/g')" # sed to mask password
+      debug "\t│ $(echo ${line})" # | sed -e 's/^password:.*$/password: ******/g')" # sed to mask password
     done
     debug "\t└─────────────────────────────"
   fi
@@ -339,19 +356,19 @@ create_mongo_option_file() {
 }
 
 check_mongo_connexion () {
-  call_silent mongo --quiet --config=${option_file} --eval "printjson(db.serverStatus())"
+  call_silent mongosh --quiet --eval "JSON.stringify(db.serverStatus())" "${DB_MONGO_URI}"
   return ${?}
 }
 
 lock_mongo () {
-  data=$(call_silent_error mongo --quiet --config=${option_file} --eval "printjson(db.fsyncLock())")
+  data=$(call_silent_error mongosh --quiet --eval "db.fsyncLock()" "${DB_MONGO_URI}")
   debug "lock_mongo result: ${data}"
   echo "$data" | grep -q "\"ok\" : 1"
   return ${?}
 }
 
 unlock_mongo () {
-  data=$(call_silent_error mongo --quiet --config=${option_file} --eval "printjson(db.fsyncUnlock())")
+  data=$(call_silent_error mongosh --quiet --eval "db.fsyncUnlock()" "${DB_MONGO_URI}")
   debug "unlock_mongo result: ${data}"
   echo "$data" | grep -q "\"ok\" : 1"
   return ${?}
@@ -362,13 +379,13 @@ backup_mongo () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    [[ "${FORCE}" != "1" ]] &&\
+    is_force &&\
       check_mongo_connexion &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
 
-    lock_mongo
+    [[ ${DB_LOCK} == "1" ]] && lock_mongo
     backup_fs
-    unlock_mongo
+    [[ ${DB_LOCK} == "1" ]] && unlock_mongo
     
     return ${?}
   fi
@@ -387,17 +404,17 @@ backup_mongo () {
     adapter_args+=("--quiet")
   fi
   
-  local db_filename="${DB_DATABASE:-"database"}.sql"
+  local db_filename="${DB_DATABASE:-"database"}.tar"
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    "--stdin-filename"\
-    "${db_filename}"\
+    "--stdin"\
+    "--stdin-filename=${db_filename}"\
   )
   
   debug "adapter_args=${adapter_args[@]}"
   debug "restic_args=${restic_args[@]}"
 
-  call_silent_err mongodump ${adapter_args[@]} | restic ${restic_args[@]} backup
+  mongodump ${adapter_args[@]} | restic ${restic_args[@]} backup
 }
 
 restore_mongo () {
@@ -405,7 +422,7 @@ restore_mongo () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    [[ "${FORCE}" != "1" ]] &&\
+    is_force &&\
       check_mongo_connexion &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     restore_fs
@@ -426,14 +443,13 @@ restore_mongo () {
     adapter_args+=("--quiet")
   fi
 
-  local db_filename="${DB_DATABASE:-"database"}.sql"
+  local db_filename="${DB_DATABASE:-"database"}.tar"
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    "--path"\
-    "/${db_filename}"\
+    "--path=/${db_filename}"\
   )
 
-  call_silent_err restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mongorestore ${adapter_args[@]}
+  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mongorestore ${adapter_args[@]}
 }
 
 ############
@@ -443,14 +459,17 @@ restore_mongo () {
 # arg1=client command, arg2=restore command, arg3=backup command
 validate_db_mode_dependencies() {
   if [[ "${MODE}" == "utility" ]]; then
-    if [ -x "$(command -v "${2}")" ] || [ -x "$(command -v "${3}")" ]; then
+    debug $(command -v "${2}")
+    debug $(command -v "${3}")
+    if [ ! -x "$(command -v "${2}")" ] || [ ! -x "$(command -v "${3}")" ]; then
       warn "${2} or ${3} is not installed, fallback to mode='files'"
       MODE="files"
     fi
   fi
 
   if [[ "${MODE}" == "files" ]]; then
-    if [[ "${DB_LOCK}" == "1" ]] && [ -x "$(command -v "${1}")" ]; then
+    debug $(command -v "${1}")
+    if [[ "${DB_LOCK}" == "1" ]] && [ ! -x "$(command -v "${1}")" ]; then
       exception "${1} is not installed, but needed to acquire a lock, if you really want to backup/restore without lock pass the --no-db-lock option" 64
     fi
   fi
@@ -490,7 +509,7 @@ backup () {
 # Restore entrypoint
 restore () {
   [[ -z "$SNAPSHOT_ID" ]] \
-    && exception "missing --snapshotId|-s option or SNAPSHOT_ID environment variable, 'latest' is a valid snaphotId value" 64
+    && exception "missing --snapshot-id|-s option or SNAPSHOT_ID environment variable, 'latest' is a valid snaphotId value" 64
 
   call validate_config_${ADAPTER}
   call prepare_restic_args
@@ -619,11 +638,11 @@ fetch_args () {
         ADAPTER="$1"
         shift
         ;;
-      --snapshotId=*|--snapshotid=*)
+      --snapshot-id=*|--snapshotid=*)
         SNAPSHOT_ID=`echo "$1" | sed -e 's/^[^=]*=//g'`
         shift
         ;;
-      -s|--snapshotId|--snapshotid)
+      -s|--snapshot-id|--snapshotid)
         shift
         SNAPSHOT_ID="$1"
         shift
@@ -647,6 +666,19 @@ fetch_args () {
       --mode|-mode)
         shift
         MODE="$1"
+        shift
+        ;;
+      --fs-relative)
+        shift
+        FS_RELATIVE="1"
+        ;;
+      --fs-root=*|--fsroot=*)
+        FS_ROOT=`echo "$1" | sed -e 's/^[^=]*=//g'`
+        shift
+        ;;
+      --fs-root|--fsroot)
+        shift
+        FS_ROOT="$1"
         shift
         ;;
       -t|--tag)
@@ -685,7 +717,7 @@ fetch_args () {
         shift
         ;;
       --json)
-        warn 'compatibility with this kind of output is not guaranteed yet'
+        is_force || warn 'compatibility with this kind of output is not guaranteed yet'
         # @todo This check should go somewhere else, disabling it because does not need it right now
         # if [ -x "$(command -v jq)" ]; then
         RESTIC_ARGS+=("--json")
@@ -741,9 +773,11 @@ Options:
   -a adapter, --adapter=adapter   can be 'mysql', 'pg', 'mongo', 'fs'
   -f, --force                     less safe, but force some actions even if not entirely possible, and avoid some checks
   -m adapter, --mode=mode         can be 'files' or 'utility', default to 'utility' (no effect for 'fs' adapter). Utility uses mongodump, mysqldump, ... while 'files' backup database files. FS_ROOT is required with 'files' option
-  -s id, --snapshotId=id          use a specific snapshot (restore action only), "latest" is a valid value
+  -s id, --snapshot-id=id          use a specific snapshot (restore action only), "latest" is a valid value
   -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)
   --no-clean                      prevent the cleaning after all actions (and act as a dry-run for prune action)
+  --fs-root                       check FS_ROOT
+  --fs-relative                   check FS_RELATIVE
   --no-db-lock                    when using mode=files, disable the database lock (hot backup), may result in data lost if the database is in use. This can be useful to backup a database that is not running and thus not reachable
   --clean                         trigger the cleaning after all action (or act as a dry-run for prune action), for use with WAIOB_DISABLE_AUTO_CLEAN env variable
   -d, --debug                     set the logging level to debug (see WAIOB_SYSLOG_LEVEL)
@@ -776,7 +810,8 @@ Environment:
     * TAGS: list of tags to filter snapshots (ex: TAG="tag1 tag2")
   
   - FileSystem (FS):
-    * FS_ROOT: the root directory to backup from / restore to
+    * FS_ROOT: the root directory to backup from or restore to
+    * FS_RELATIVE: backup option, default to 0, if enabled, will not store the whole path in the archive. If this option is not enable, on restore FS_ROOT needs to be set to /, otherwise a backup of "/dir1/dir2/" will be restored like "/dir1/dir2/dir1/dir2/
 
   - MySQL/Mongo/PG:
     * WAIOB_MODE: can be "files" or "utility", default to "utility", "utility" uses mongodump/mongorestore, and "files" backup database directory files. "files" is not compatible with DB_DATABASE, DB_TABLES, DB_COLLECTIONS...
@@ -793,7 +828,7 @@ Environment:
     
   - Mongo:
     * DB_MONGO_URI: uri, like mongodb://[username:password@]host1[:port1][,host2[:port2],...[,hostN[:portN]]][/[database][?options]]
-    * DB_MONGO_PASSWORD: the database password
+    * DB_MONGO_PASSWORD: the database password (@todo, for now put it in DB_MONGO_URI)
 
   - Other optional envs:
     * WAIOB_SYSLOG_FACILITY: define facility for syslog, default to local0
@@ -864,6 +899,7 @@ notice  () { log 5 $@; }
 warn    () { log 4 $@; }
 error   () { log 3 $@; }
 is_debug() { (( "${SYSLOG_LEVEL}" == "7" )) && return 0 || return 1; }
+is_force() { [[ "${FORCE}" != "1" ]] && return 0 || return 1; }
 
 # Usage: exception <message> <code> <level=3>
 exception () {

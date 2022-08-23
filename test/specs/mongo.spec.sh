@@ -22,7 +22,6 @@ test_mongo() {
     export factory_mongo_tag="$(echo $RANDOM)"
 
     create_db
-    stop_db
   }
 
   teardown() {
@@ -33,14 +32,14 @@ test_mongo() {
   start_db() {
     [[ ! -z "${mongod_pid}" ]] && return 0
     mongod --dbpath="${mongo_dbpath}" &> /dev/null & mongod_pid="$!"
-    sleep 2
+    sleep 1
   }
 
   stop_db() {
     [ -z "${mongod_pid:-}" ] && return 0
-    kill "${mongod_pid:-}"
-    sleep 2
-    export mongod_pid=""
+    kill "${mongod_pid:-}" || echo 'unable to kill mongo, already killed'
+    sleep 1
+    mongod_pid=""
   }
 
   create_db() {
@@ -56,27 +55,28 @@ test_mongo() {
   }
 
   backup() {
-    start_db
-    
     mongoimport "${SCRIPT_DIR}/datas/mongo/sales.json"
     export factory_mongo_sales_count="$(query_sales_count)"
     
     ${cmd} backup mongo -d -t $factory_mongo_tag || throw "backup failed"
-    stop_db
   }
 
   restore() {
     remove_db || throw "unable to remove db"
     create_db || throw "unable to create virgin db"
-    stop_db || throw "unable to stop db"
-
-    ${cmd} restore mongo -s latest -t $factory_mongo_tag || throw "restore failed"
     
-    start_db || throw "unable to start db"
+    if [[ WAIOB_MODE == "files" ]]; then
+      stop_db || throw "unable to stop db"
+    fi
+
+    ${cmd} restore mongo -f -s latest -t $factory_mongo_tag || throw "restore failed"
+    
+    if [[ WAIOB_MODE == "files" ]]; then
+      start_db || throw "unable to start db"
+    fi
 
     sales_count="$(query_sales_count)"
     expect_to_be "${sales_count}" "${factory_mongo_sales_count:-5000}"
-    stop_db
   }
 
   # --- Helper methods

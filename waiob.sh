@@ -180,7 +180,7 @@ restore_mysql () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    if is_force; then
+    if not_is_force; then
       call_silent mysql --defaults-extra-file=${option_file} -e "show database" && exception "on mode=files, database should not be running, pass --force to restore anyway or stop database before restoring" 50 4
     fi
     
@@ -248,7 +248,7 @@ backup_pg () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    is_force &&\
+    not_is_force &&\
       call_silent pg_isready --passfile=${option_file} &&\
       exception "on mode=files, it is definitely not recommended to do a backup while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     backup_fs
@@ -288,7 +288,7 @@ restore_pg () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    is_force &&\
+    not_is_force &&\
       call_silent pg_isready --passfile=${option_file} &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     restore_fs
@@ -361,14 +361,14 @@ check_mongo_connexion () {
 }
 
 lock_mongo () {
-  data=$(call_silent_error mongosh --quiet --eval "db.fsyncLock()" "${DB_MONGO_URI}")
+  data=$(mongosh --quiet --eval "db.fsyncLock()" "${DB_MONGO_URI}" 2> /dev/null)
   debug "lock_mongo result: ${data}"
   echo "$data" | grep -q "\"ok\" : 1"
   return ${?}
 }
 
 unlock_mongo () {
-  data=$(call_silent_error mongosh --quiet --eval "db.fsyncUnlock()" "${DB_MONGO_URI}")
+  data=$(mongosh --quiet --eval "db.fsyncUnlock()" "${DB_MONGO_URI}" 2> /dev/null)
   debug "unlock_mongo result: ${data}"
   echo "$data" | grep -q "\"ok\" : 1"
   return ${?}
@@ -379,15 +379,24 @@ backup_mongo () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    is_force &&\
-      check_mongo_connexion &&\
+    local connected="0"
+    check_mongo_connexion && connected="1" || connected="0"
+    not_is_force &&\
+      [[ "${connected}" == "1" ]] &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
 
-    [[ ${DB_LOCK} == "1" ]] && lock_mongo
+    if [[ "${connected}" == "1" ]]; then 
+      [[ ${DB_LOCK} == "1" ]] && lock_mongo
+    fi
+
     backup_fs
-    [[ ${DB_LOCK} == "1" ]] && unlock_mongo
+    ret=${?}
     
-    return ${?}
+    if [[ "${connected}" == "1" ]]; then 
+      [[ ${DB_LOCK} == "1" ]] && unlock_mongo
+    fi
+
+    return ${ret}
   fi
 
   local adapter_args=(\
@@ -422,8 +431,10 @@ restore_mongo () {
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then
-    is_force &&\
-      check_mongo_connexion &&\
+    local connected="0"
+    check_mongo_connexion && connected="1" || connected="0"
+    not_is_force &&\
+      [[ "${connected}" == "1" ]] &&\
       exception "on mode=files, it is definitely not recommended to do a restore while the database is running, either shutdown the database first, or try with --force to ignore this warning" 50 4
     restore_fs
     return ${?}
@@ -900,6 +911,7 @@ warn    () { log 4 $@; }
 error   () { log 3 $@; }
 is_debug() { (( "${SYSLOG_LEVEL}" == "7" )) && return 0 || return 1; }
 is_force() { [[ "${FORCE}" != "1" ]] && return 0 || return 1; }
+not_is_force() { [[ "${FORCE}" != "1" ]] && return 1 || return 0; }
 
 # Usage: exception <message> <code> <level=3>
 exception () {

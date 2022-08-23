@@ -5,6 +5,8 @@
 #-----------------------------
 
 test_mongo() {
+  export mongod_pid=""
+
   prepare() {
     export mongo_dbpath="/datas/mongo"
 
@@ -19,34 +21,62 @@ test_mongo() {
     # Some factories
     export factory_mongo_tag="$(echo $RANDOM)"
 
-    # Start mongo server
-    mkdir -p "${mongo_dbpath}"
-    mongod --dbpath="${mongo_dbpath}" &> /dev/null & export mongod_pid="$!"
-    sleep 2
+    create_db
+    stop_db
   }
 
   teardown() {
-    [[ -d "${factory_workdir:-""}" ]] && rm -Rf "${factory_workdir}"
+    [[ -d "${RESTIC_REPOSITORY}" ]] && rm -Rf "${RESTIC_REPOSITORY}"
+    remove_db
+  }
 
-    # Kill mongo server
-    kill -0 "$mongod_pid" && kill "$mongod_pid"
+  start_db() {
+    [[ ! -z "${mongod_pid}" ]] && return 0
+    mongod --dbpath="${mongo_dbpath}" &> /dev/null & mongod_pid="$!"
     sleep 2
+  }
+
+  stop_db() {
+    [ -z "${mongod_pid:-}" ] && return 0
+    kill "${mongod_pid:-}"
+    sleep 2
+    export mongod_pid=""
+  }
+
+  create_db() {
+    # Start mongo server
+    mkdir -p "${mongo_dbpath}"
+    start_db
+  }
+
+  remove_db() {
+    # Kill mongo server
+    stop_db
     rm -Rf "${mongo_dbpath}"
   }
 
   backup() {
+    start_db
+    
     mongoimport "${SCRIPT_DIR}/datas/mongo/sales.json"
     export factory_mongo_sales_count="$(query_sales_count)"
     
     ${cmd} backup mongo -d -t $factory_mongo_tag || throw "backup failed"
+    stop_db
   }
 
   restore() {
+    remove_db || throw "unable to remove db"
+    create_db || throw "unable to create virgin db"
+    stop_db || throw "unable to stop db"
+
     ${cmd} restore mongo -s latest -t $factory_mongo_tag || throw "restore failed"
     
+    start_db || throw "unable to start db"
+
     sales_count="$(query_sales_count)"
-    
     expect_to_be "${sales_count}" "${factory_mongo_sales_count:-5000}"
+    stop_db
   }
 
   # --- Helper methods
@@ -57,16 +87,19 @@ test_mongo() {
 
   # --- Test suite
 
-  test_mongo_utility_mode() {
-    export WAIOB_MODE="utility"
+  test_mongo_common() {
     it "should backup" backup
     it "should restore" restore
   }
 
+  test_mongo_utility_mode() {
+    export WAIOB_MODE="utility"
+    test_mongo_common
+  }
+
   test_mongo_files_mode() {
     export WAIOB_MODE="files"
-    it "should backup" backup
-    it "should restore" restore
+    test_mongo_common
   }
 
   prepare

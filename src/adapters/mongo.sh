@@ -2,6 +2,8 @@
 # Mongo
 ####
 
+source "${SRC_DIR}/adapters/fs.sh"
+
 # Validate env and variables
 validate_config_mongo() {
   validate_db_mode_dependencies "mongosh" "mongodump" "mongorestore"
@@ -113,7 +115,7 @@ backup_mongo () {
 }
 
 restore_mongo () {
-  call create_pg_option_file
+  call create_mongo_option_file
   local option_file="${RETURN_VALUE}"
 
   if [[ "${MODE}" == "files" ]]; then

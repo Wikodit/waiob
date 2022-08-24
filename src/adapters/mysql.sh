@@ -2,6 +2,8 @@
 # MySQL
 ####
 
+source "${SRC_DIR}/adapters/fs.sh"
+
 # Validate env and variables
 validate_config_mysql() {
   validate_db_mode_dependencies "mysql" "mysqldump" "mysql"

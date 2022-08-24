@@ -14,7 +14,7 @@ logc () {
 
   # Redirect to stdout/stderr if in a tty
   if [[ $IS_IN_TTY == "1" ]]; then
-    [[ "$SYSLOG_PREFIX" == "1" ]] && local prefix="$(date "+%F %T") [${levels[level]:-3}]\t"
+    [[ "${SYSLOG_PREFIX:-"0"}" == "1" ]] && local prefix="$(date "+%F %T") [${levels[level]:-3}]\t"
     local std="${color}${prefix:-""}${msg}\033[0m"
     (( "${level}" > "3" )) && echo -e "${std}" || >&2 echo -e "${std}" # stdout or stderr
   fi

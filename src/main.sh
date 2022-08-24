@@ -1,5 +1,9 @@
+source "${SRC_DIR}/includes.sh"
+
 # Launcher
 main () {
+  fetch_args $@
+
   [[ -z "$ACTION" ]] \
     && error "No action defined" 64
 
@@ -24,3 +28,6 @@ main () {
   [ -x "${SRC_DIR}/actions/${ACTION}.sh" ] && source "${SRC_DIR}/actions/${ACTION}.sh" || exception "no adapter found"
   call "${ACTION}"
 }
+
+# Launch the script
+main $@

@@ -2,6 +2,8 @@
 # PostgreSQL
 ####
 
+source "${SRC_DIR}/adapters/fs.sh"
+
 # Validate env and variables
 validate_config_pg() {
   validate_db_mode_dependencies "psql" "pg_dump" "pg_restore"

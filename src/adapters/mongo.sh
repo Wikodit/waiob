@@ -112,6 +112,7 @@ backup_mongo () {
   debug "restic_args=${restic_args[@]}"
 
   mongodump ${adapter_args[@]} | restic ${restic_args[@]} backup
+  return $?
 }
 
 restore_mongo () {
@@ -149,4 +150,5 @@ restore_mongo () {
   )
 
   restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mongorestore ${adapter_args[@]}
+  return $?
 }

@@ -17,33 +17,35 @@ RUN \
 #---
 FROM debian:stable-20220801-slim
 
+ENV PATH="${PATH}:/opt/waiob/bin"
+
 RUN \
-  echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends \
     jq \
     wget \
+    gnupg \
     restic \
     ca-certificates \
-    mariadb-client-10.5 \
     postgresql-client-13 \
   && \
   wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - &&\
   echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
+  echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
+  echo "deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0 mysql-tools" | tee /etc/apt/sources.list.d/mysql.list &&\
+  apt-key adv --keyserver pgp.mit.edu --recv-keys 3A79BD29 &&\
   apt-get update &&\
-  apt-get install -y --no-install-recommends mongodb-org-shell mongodb-org-tools && \
-  TMP="$(mktemp)" && \
-    wget -O "${TMP}" 'https://fastdl.mongodb.org/tools/db/mongodb-database-tools-debian11-x86_64-100.5.4.deb' && \
-    dpkg -i "${TMP}" && \
-    rm "${TMP}" \
+  apt-get install -y --no-install-recommends \
+    mongodb-org-shell \
+    mongodb-org-tools \
+    mysql-community-client \
+    mysql-shell \
   && \
-  apt-get remove -y --purge wget && \
   apt-get autoremove -y && \
-  apt-get clean && \
-  rm -rf /var/lib/apt/lists/*
+  apt-get clean
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY . /opt/waiob
+COPY bin lib src waiob.sh /opt/waiob
 
 ENTRYPOINT ["waiob"]
 CMD ["--help"]

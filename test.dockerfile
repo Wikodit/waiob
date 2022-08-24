@@ -16,9 +16,9 @@ RUN \
 FROM debian:stable-20220801-slim
 
 ENV PATH="${PATH}:/opt/waiob/bin"
+ENV LANG en_US.UTF-8
 
 RUN \
-  echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
   apt-get update && \
   apt-get install -y --no-install-recommends \
     jq \
@@ -26,26 +26,42 @@ RUN \
     gnupg \
     restic \
     ca-certificates \
-    mariadb-client-10.5 \
     postgresql-client-13 \
   && \
   wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - &&\
   echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
+  echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
+  echo "deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0 mysql-tools" | tee /etc/apt/sources.list.d/mysql.list &&\
+  apt-key adv --keyserver pgp.mit.edu --recv-keys 3A79BD29 &&\
   apt-get update &&\
-  apt-get install -y --no-install-recommends mongodb-org-shell mongodb-org-tools && \
+  apt-get install -y --no-install-recommends \
+    mongodb-org-shell \
+    mongodb-org-tools \
+    mysql-community-client \
+    mysql-shell \
+  && \
+  apt-get autoremove -y && \
+  apt-get clean
+
+RUN \
+  apt-get update &&\
+  {\
+    echo mysql-cluster-community-server mysql-cluster-community-server/root-pass password root-pwd;\
+    echo mysql-cluster-community-server mysql-cluster-community-server/re-root-pass password root-pwd;\
+  } | debconf-set-selections &&\
+  DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
+    mongodb-org \
+    mysql-server \
+    unzip \
+    locales \
+  &&\
+  sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+    dpkg-reconfigure --frontend=noninteractive locales && \
+    update-locale LANG=en_US.UTF-8 && \
   apt-get autoremove -y && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
-# Mongo
-RUN \
-  wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - &&\
-  echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
-  apt-get update &&\
-  apt-get install -y --no-install-recommends mongodb-org &&\
-  apt-get autoremove -y && \
-  apt-get clean && \
-  rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
 COPY . /opt/waiob

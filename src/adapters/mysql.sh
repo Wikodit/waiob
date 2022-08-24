@@ -103,6 +103,8 @@ backup_mysql () {
   debug "restic_args=${restic_args[@]}"
 
   mysqldump ${adapter_args[@]} | restic ${restic_args[@]} backup
+  
+  return $?
 }
 
 restore_mysql () {
@@ -131,5 +133,5 @@ restore_mysql () {
     "--path=/${db_filename}"\
   )
 
-  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mysqldump ${adapter_args[@]} "${DB_DATABASE:-}" ${DB_TABLES:-}
+  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | mysql ${adapter_args[@]}
 }

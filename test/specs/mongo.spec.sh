@@ -36,7 +36,8 @@ test_mongo() {
     debug "start_db"
 
     if [ -r "${mongod_pid_file}" ]; then
-      if kill -0 "$(cat "${mongod_pid_file}")" &> /dev/null; then
+      local pid="$(cat "${mongod_pid_file}")"
+      if kill -0 "${pid}" &> /dev/null; then
         debug "already running";
         return 0
       fi
@@ -51,10 +52,14 @@ test_mongo() {
   stop_db() {
     debug "stop_db"
 
-    if [ -r "${mongod_pid_file}" ] && kill -9 "$(cat "${mongod_pid_file}")" &> /dev/null; then
-      debug "killed mongod";
-      rm -f "${mongod_pid_file}"
-      return 0
+    if [ -r "${mongod_pid_file}" ]; then
+      local pid="$(cat "${mongod_pid_file}")"
+      if kill -9 "$pid" &> /dev/null; then
+        wait "${pid}" 2>/dev/null
+        debug "mongod exited with status $?";
+        rm -f "${mongod_pid_file}"
+        return 0
+      fi
     fi
 
     debug "mongod is not running"

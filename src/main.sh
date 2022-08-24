@@ -24,8 +24,12 @@ main () {
 
   validate_config_common
 
-  [[ ! -z ${ADAPTER} ]] && [ -x "${SRC_DIR}/adapters/${ADAPTER}.sh" ] && source "${SRC_DIR}/adapters/${ADAPTER}.sh" || exception "no adapter found"
-  [ -x "${SRC_DIR}/actions/${ACTION}.sh" ] && source "${SRC_DIR}/actions/${ACTION}.sh" || exception "no adapter found"
+  if [[ ! -z "${ADAPTER}" ]]; then
+    [ -x "${SRC_DIR}/adapters/${ADAPTER}.sh" ] && source "${SRC_DIR}/adapters/${ADAPTER}.sh" || exception "no adapter found"
+  fi
+
+  [ -x "${SRC_DIR}/actions/${ACTION}.sh" ] && source "${SRC_DIR}/actions/${ACTION}.sh" || exception "no action found"
+  
   call "${ACTION}"
 }
 

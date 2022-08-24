@@ -193,13 +193,12 @@ test_mysql() {
   prepare
   
   export WAIOB_MODE="utility"
-  describe "- with mode utility" test_mysql_common
+  describe "with mode utility" test_mysql_common
   
   export WAIOB_MODE="files"
-  describe "- with mode files" test_mysql_common
+  describe "with mode files" test_mysql_common
 
   teardown
 }
 
 [[ "${WAIOB_ADAPTER}" =~ ^(mysql|all)$ ]] && describe "MySQL" test_mysql || debug "skip mysql"
-bash

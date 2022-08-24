@@ -176,10 +176,10 @@ test_mongo() {
   }
 
   export WAIOB_MODE="utility"
-  describe "- with mode utility" test_mongo_common
+  describe "with mode utility" test_mongo_common
   
   export WAIOB_MODE="files"
-  describe "- with mode files" test_mongo_common
+  describe "with mode files" test_mongo_common
 }
 
 [[ "${WAIOB_ADAPTER}" =~ ^(mongo|all)$ ]] && describe "MongoDB" test_mongo || debug "skip mongo"

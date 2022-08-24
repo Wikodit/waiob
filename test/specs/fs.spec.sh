@@ -63,4 +63,4 @@ test_fs() {
   teardown
 }
 
-# describe "FS" test_fs
+[[ "${WAIOB_ADAPTER}" =~ ^(fs|all)$ ]] && describe "FS" test_fs

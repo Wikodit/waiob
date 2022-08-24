@@ -15,6 +15,8 @@ RUN \
 #---
 FROM debian:stable-20220801-slim
 
+ENV PATH="${PATH}:/opt/waiob/bin"
+
 RUN \
   echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
   apt-get update && \
@@ -46,8 +48,7 @@ RUN \
   rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY waiob.sh /usr/local/bin/waiob
-COPY test /test
+COPY . /opt/waiob
 
-ENTRYPOINT ["sh", "-c"]
-CMD ["/test/test.sh"]
+ENTRYPOINT ["waiob-test"]
+CMD []

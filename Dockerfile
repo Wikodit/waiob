@@ -2,6 +2,8 @@ FROM golang:1.19
 
 ARG RESTIC_COMMIT="f0bb4f8708b1e09e09897463d70b5c89b20eec01"
 
+ENV PATH="${PATH}:/opt/waiob/bin"
+
 WORKDIR /build
 
 RUN \
@@ -41,7 +43,7 @@ RUN \
   rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY waiob.sh /usr/local/bin/waiob
+COPY . /opt/waiob
 
 ENTRYPOINT ["waiob"]
 CMD ["--help"]

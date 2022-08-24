@@ -724,7 +724,7 @@ fetch_args () {
         ;;
      --log-level)
         shift
-        SYSLOG_LEVEL+=("$1")
+        SYSLOG_LEVEL="$1"
         shift
         ;;
       --json)
@@ -783,7 +783,7 @@ Options:
   -h, --help                      show brief help
   -a adapter, --adapter=adapter   can be 'mysql', 'pg', 'mongo', 'fs'
   -f, --force                     less safe, but force some actions even if not entirely possible, and avoid some checks
-  -m adapter, --mode=mode         can be 'files' or 'utility', default to 'utility' (no effect for 'fs' adapter). Utility uses mongodump, mysqldump, ... while 'files' backup database files. FS_ROOT is required with 'files' option
+  -m mode, --mode=mode         can be 'files' or 'utility', default to 'utility' (no effect for 'fs' adapter). Utility uses mongodump, mysqldump, ... while 'files' backup database files. FS_ROOT is required with 'files' option
   -s id, --snapshot-id=id          use a specific snapshot (restore action only), "latest" is a valid value
   -t tag, --tag=tag               filer using tag (or tags, option can be used multiple time)
   --no-clean                      prevent the cleaning after all actions (and act as a dry-run for prune action)

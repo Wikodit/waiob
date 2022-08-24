@@ -18,6 +18,7 @@ RUN \
 FROM debian:stable-20220801-slim
 
 ENV PATH="${PATH}:/opt/waiob/bin"
+ENV LANG en_US.UTF-8
 
 RUN \
   apt-get update && \
@@ -45,7 +46,7 @@ RUN \
   apt-get clean
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY bin lib src waiob.sh /opt/waiob
+COPY bin lib src waiob.sh /opt/waiob/
 
 ENTRYPOINT ["waiob"]
 CMD ["--help"]

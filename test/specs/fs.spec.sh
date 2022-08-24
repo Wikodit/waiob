@@ -5,6 +5,7 @@
 #-----------------------------
 
 test_fs() {
+
   prepare() {
     # Factory
     export factory_workdir="${WORKDIR:-"$(mktemp -d)"}"
@@ -32,14 +33,14 @@ test_fs() {
     echo -n "$factory_fs_file1_content" > "${FS_ROOT}/$factory_fs_file1"
     echo -n "$factory_fs_dir1_file1_content" > "${FS_ROOT}/$factory_fs_dir1_file1"
 
-    ${cmd} backup fs --fs-relative -t $factory_fs_tag || throw "backup failed"
+    ${cmd} backup fs ${WAIOB_EXTRA_ARGS[@]} --fs-relative -t $factory_fs_tag || throw "backup failed"
   }
 
   restore() {
     export FS_ROOT="${factory_workdir}/restored"
     mkdir -p "${FS_ROOT}"
 
-    ${cmd} restore fs -s latest -t $factory_fs_tag || throw "restore failed"
+    ${cmd} restore fs ${WAIOB_EXTRA_ARGS[@]} -s latest -t $factory_fs_tag || throw "restore failed"
 
     expect_file_to_have_content "${FS_ROOT}/${factory_fs_file1}" "${factory_fs_file1_content}"
     expect_file_to_have_content "${FS_ROOT}/${factory_fs_file1}" "${factory_fs_file1_content}"
@@ -63,4 +64,4 @@ test_fs() {
   teardown
 }
 
-[[ "${WAIOB_ADAPTER}" =~ ^(fs|all)$ ]] && describe "FS" test_fs
+[[ "${WAIOB_ADAPTER}" =~ ^(fs|all)$ ]] && describe "FS" test_fs || debug "skip fs"

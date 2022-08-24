@@ -23,6 +23,8 @@ export WAIOB_ADAPTER="${WAIOB_ADAPTER:-"all"}"
 export SHOW_TEST_STDOUT="${SHOW_TEST_STDOUT:-}"
 export SHOW_TEST_STDERR="${SHOW_TEST_STDERR:-}"
 
+export WAIOB_EXTRA_ARGS=()
+
 ####################################################################################################
 # Dependencies
 #-----------------------------
@@ -41,6 +43,10 @@ main() {
   describe "\033[4mTESTS:" test_suite
   echo -e ""
   describe "\033[4mSUMMARY:" show_summary
+}
+
+teardown() {
+  debug "global teardown, exited..."
 }
 
 cleanup() {
@@ -111,6 +117,8 @@ fetch_args () {
     SHOW_TEST_STDOUT="${SHOW_TEST_STDOUT:-"0"}"
     SHOW_TEST_STDERR="${SHOW_TEST_STDERR:-"0"}"
   fi
+
+  is_debug && WAIOB_EXTRA_ARGS+=("-d")
 
   debug "Command: ${args}"
 }

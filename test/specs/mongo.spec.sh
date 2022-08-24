@@ -62,7 +62,7 @@ test_mongo() {
     mongoimport "${FACTORY_DIR}/mongo/sales.json"
     export factory_mongo_sales_count="$(query_sales_count)"
     
-    ${cmd} backup mongo -t $factory_mongo_tag || throw "backup failed"
+    ${cmd} backup mongo ${WAIOB_EXTRA_ARGS[@]} -t $factory_mongo_tag || throw "backup failed"
   }
 
   restore() {
@@ -73,7 +73,7 @@ test_mongo() {
       stop_db || throw "unable to stop db"
     fi
 
-    ${cmd} restore mongo -f -s latest -t $factory_mongo_tag || throw "restore failed"
+    ${cmd} restore mongo ${WAIOB_EXTRA_ARGS[@]} -f -s latest -t $factory_mongo_tag || throw "restore failed"
     
     if [[ "${WAIOB_MODE}" == "files" ]]; then
       start_db || throw "unable to start db"
@@ -116,4 +116,4 @@ test_mongo() {
   teardown
 }
 
-[[ "${WAIOB_ADAPTER}" =~ ^(mongo|all)$ ]] && describe "MongoDB" test_mongo
+[[ "${WAIOB_ADAPTER}" =~ ^(mongo|all)$ ]] && describe "MongoDB" test_mongo || debug "skip mongo"

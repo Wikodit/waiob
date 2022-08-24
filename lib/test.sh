@@ -4,6 +4,7 @@ export STATS_FAILED=0
 test_suite() {
   local specs="$(find "${SPECS_DIR:-"./test/specs"}" -maxdepth 1 -type f -name '*.spec.sh' -print)"
   for file in ${specs}; do
+    debug "spec found: $file"
     source $file
   done
 }

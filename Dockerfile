@@ -2,7 +2,7 @@ FROM golang:1.19
 
 ARG RESTIC_COMMIT="f0bb4f8708b1e09e09897463d70b5c89b20eec01"
 
-ENV PATH="${PATH}:/opt/waiob/bin"
+ENV PATH="$PATH:/opt/waiob/bin"
 
 WORKDIR /build
 
@@ -17,7 +17,7 @@ RUN \
 #---
 FROM debian:stable-20220801-slim
 
-ENV PATH="${PATH}:/opt/waiob/bin"
+ENV PATH="$PATH:/opt/waiob/bin"
 ENV LANG en_US.UTF-8
 
 RUN \
@@ -46,7 +46,14 @@ RUN \
   apt-get clean
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY bin lib src waiob.sh /opt/waiob/
+COPY bin /opt/waiob/bin
+RUN chmod -R +x /opt/waiob/bin
+COPY lib /opt/waiob/lib
+RUN chmod -R +x /opt/waiob/lib
+COPY src /opt/waiob/src
+RUN chmod -R +x /opt/waiob/src
+COPY waiob.sh /opt/waiob/
+RUN chmod +x /opt/waiob/waiob.sh
 
-ENTRYPOINT ["waiob"]
+ENTRYPOINT [ "waiob" ]
 CMD ["--help"]

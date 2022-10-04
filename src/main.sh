@@ -1,3 +1,6 @@
+set -euo pipefail
+# set -x # uncomment for xtrem debugging with high cafeine level requirement
+
 source "${SRC_DIR}/includes.sh"
 
 # Launcher

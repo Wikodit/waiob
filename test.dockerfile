@@ -20,6 +20,10 @@ ENV LANG en_US.UTF-8
 
 RUN \
   apt-get update && \
+  apt-get install -y --no-install-recommends locales && \
+  sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+      dpkg-reconfigure --frontend=noninteractive locales && \
+      update-locale LANG=en_US.UTF-8 && \
   apt-get install -y --no-install-recommends \
     jq \
     wget \
@@ -52,19 +56,18 @@ RUN \
   DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
     mongodb-org \
     mysql-server \
-    unzip \
-    locales \
-  &&\
-  sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
-    dpkg-reconfigure --frontend=noninteractive locales && \
-    update-locale LANG=en_US.UTF-8 && \
+    unzip &&\
   apt-get autoremove -y && \
   apt-get clean && \
   rm -rf /var/lib/apt/lists/*
 
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY . /opt/waiob
+COPY bin /opt/waiob/bin
+COPY src /opt/waiob/src
+COPY test /opt/waiob/test
+
+RUN chmod +x /opt/waiob/bin/*
 
 ENTRYPOINT ["waiob-test"]
 CMD []

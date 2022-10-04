@@ -7,11 +7,8 @@ trap cleanup EXIT
 ####################################################################################################
 # Env variables
 #-----------------------------
-export SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
-export TEST_DIR="${SCRIPT_DIR}/test"
 export FACTORY_DIR="${TEST_DIR}/factories"
 export SPECS_DIR="${TEST_DIR}/specs"
-export LIB_DIR="${SCRIPT_DIR}/lib"
 
 export cmd="${WAIOB_CMD:-"waiob"}"
 

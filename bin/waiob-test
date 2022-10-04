@@ -1,2 +1,9 @@
 #!/usr/bin/env bash
-source "$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )/../test.sh"
+
+export SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
+
+export SRC_DIR="${SRC_DIR:-"${SCRIPT_DIR}/src"}"
+export LIB_DIR="${LIB_DIR:-"${SRC_DIR}/lib"}"
+export TEST_DIR="${SCRIPT_DIR}/test"
+
+source "${TEST_DIR}/test.sh"

@@ -22,6 +22,10 @@ ENV LANG en_US.UTF-8
 
 RUN \
   apt-get update && \
+  apt-get install -y --no-install-recommends locales && \
+  sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
+      dpkg-reconfigure --frontend=noninteractive locales && \
+      update-locale LANG=en_US.UTF-8 && \
   apt-get install -y --no-install-recommends \
     jq \
     wget \
@@ -43,17 +47,14 @@ RUN \
     mysql-shell \
   && \
   apt-get autoremove -y && \
-  apt-get clean
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/*
 
 COPY --from=0 /build/restic /usr/local/bin/
-COPY bin /opt/waiob/bin
-RUN chmod -R +x /opt/waiob/bin
-COPY lib /opt/waiob/lib
-RUN chmod -R +x /opt/waiob/lib
+COPY bin/waiob /opt/waiob/bin/waiob
 COPY src /opt/waiob/src
-RUN chmod -R +x /opt/waiob/src
-COPY waiob.sh /opt/waiob/
-RUN chmod +x /opt/waiob/waiob.sh
+
+RUN chmod +x /opt/waiob/bin/*
 
 ENTRYPOINT [ "waiob" ]
 CMD ["--help"]

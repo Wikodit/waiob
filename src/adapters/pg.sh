@@ -19,22 +19,26 @@ create_pg_option_file() {
     return 0 # nothing to do
   fi
 
-  tmp=$(mktemp)
-  chmod +600 "${tmp}"
-  echo "${DB_CONFIG_HOST:-"*"}:${DB_CONFIG_PORT:-"*"}:${DB_DATABASE:-"*"}:${DB_CONFIG_USER:-"*"}:${DB_CONFIG_PASSWORD:-""}" > "${tmp}"
+  # # --passfile is not compatible with pg_dump and pg_restore, so we need to fallback to ~/.pgpass
+  # passfile=$(mktemp)
+  local passfile="${HOME}/.pgpass"
+  touch "${passfile}"
+  chmod 600 "${passfile}"
+
+  echo "${DB_CONFIG_HOST:-"*"}:${DB_CONFIG_PORT:-"*"}:${DB_DATABASE:-"*"}:${DB_CONFIG_USER:-"*"}:${DB_CONFIG_PASSWORD:-""}" > "${passfile}"
 
   info "created pgpass file"
 
   if is_debug; then
-    debug "pg option file location: ${tmp}"
+    debug "pg option file location: ${passfile}"
     debug "\t┌─────────────────────────────"
-    cat $tmp | while read -r line; do
+    cat $passfile | while read -r line; do
       debug "\t│ $(echo ${line} | sed -e 's/:[^:]*$/:******/g')" # sed to mask password
     done
     debug "\t└─────────────────────────────"
   fi
 
-  RETURN_VALUE="${tmp}"
+  RETURN_VALUE="${passfile}"
 
   return 0
 }
@@ -52,8 +56,9 @@ backup_pg () {
   fi
 
   local adapter_args=(\
+    "-w" \
     ${ADAPTER_ARGS[@]} \
-    "--passfile=${option_file}"\
+    # "--passfile=${option_file}"\ # not compatible with pg_dump
   )
   
   local db_filename="${DB_DATABASE:-"database"}.sql"
@@ -91,9 +96,15 @@ restore_pg () {
     return ${?}
   fi
 
+  # can also be pg_restore for more advanced option
+  local restore_cmd="psql"
+
   local adapter_args=(\
+    # "-f" \ # pg_restore
+    # "-" \ # pg_restore
+    "-w" \
     ${ADAPTER_ARGS[@]} \
-    "--passfile=${option_file}"\
+    #"--passfile=${option_file}"\ # not compatible with pgrestore
   )
 
   local db_filename="${DB_DATABASE:-"database"}.sql"
@@ -105,5 +116,8 @@ restore_pg () {
   debug "adapter_args=${adapter_args[@]}"
   debug "restic_args=${restic_args[@]}"
 
-  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | pg_restore ${adapter_args[@]}
+  # # @todo if non txt format (pg_dump with -f adapter args, then this should be used)
+  # restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | pg_restore ${adapter_args[@]}
+
+  restic ${restic_args[@]} dump "${SNAPSHOT_ID}" "${db_filename}" | ${restore_cmd} ${adapter_args[@]}
 }

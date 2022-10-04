@@ -13,7 +13,7 @@ RUN \
   go run build.go
 
 #---
-FROM debian:stable-20220801-slim
+FROM debian:bullseye-slim
 
 ENV PATH="${PATH}:/opt/waiob/bin"
 ENV LANG en_US.UTF-8
@@ -30,19 +30,20 @@ RUN \
     gnupg \
     restic \
     ca-certificates \
-    postgresql-client-13 \
   && \
-  wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | apt-key add - &&\
-  echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
-  echo "deb http://deb.debian.org/debian bullseye main" >> /etc/apt/sources.list && \
-  echo "deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0 mysql-tools" | tee /etc/apt/sources.list.d/mysql.list &&\
+  wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/apt.mongodb.org.gpg >/dev/null &&\
+  wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null &&\
   apt-key adv --keyserver pgp.mit.edu --recv-keys 3A79BD29 &&\
+  echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
+  echo "deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0 mysql-tools" | tee /etc/apt/sources.list.d/mysql.list &&\
+  echo "deb http://apt.postgresql.org/pub/repos/apt bullseye-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list &&\
   apt-get update &&\
   apt-get install -y --no-install-recommends \
     mongodb-org-shell \
     mongodb-org-tools \
     mysql-community-client \
     mysql-shell \
+    postgresql-client-14 \
   && \
   apt-get autoremove -y && \
   apt-get clean
@@ -56,6 +57,7 @@ RUN \
   DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
     mongodb-org \
     mysql-server \
+    postgresql-14 \
     unzip &&\
   apt-get autoremove -y && \
   apt-get clean && \

@@ -107,7 +107,7 @@ test_mysql() {
     debug "seeding completed"
   }
 
-  backup() {    
+  backup() {
     ${cmd} backup mysql ${WAIOB_EXTRA_ARGS[@]} -t $factory_mysql_tag -- --all-databases || throw "backup failed"
   }
 
@@ -131,7 +131,7 @@ test_mysql() {
 
   check_same_data() {
     sales_count="$(query_employees_count)"
-    expect_to_be "${sales_count}" "${factory_mysql_employees_count:-5000}"
+    expect_to_be "${sales_count}" "${factory_mysql_employees_count}"
   }
 
   query_employees_count() {

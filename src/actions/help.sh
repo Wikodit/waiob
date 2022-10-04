@@ -80,7 +80,7 @@ Environment:
     * DB_CONFIG_PORT: the database port, default to database type default
     * DB_CONFIG_USER: the database username, default to database type default
     * DB_CONFIG_PASSWORD: the database password, default to database type default
-    * DB_DATABASE: the database to backup, if you want to backup all databases, pass '-- --all-databases' at the end of the command, or '-- --databases DB1 DB2 DB3'
+    * DB_DATABASE: the database to backup. For Postgres nothing means every database. For MySQL, if you want to backup all databases, pass '-- --all-databases' at the end of the command, or '-- --databases DB1 DB2 DB3'
     * DB_TABLES: list of tables to backup, by default all tables are backed up
     
   - Mongo:
@@ -115,6 +115,15 @@ Recommendation:
     When backuping all databases (recommended)
       wik-aio-backup backup mongo -- --oplog
       wik-aio-backup restore mongo -- --oplogReplay
+
+  PostgreSQL
+    When backuping to restore over, useful to be sure database/table are deleted before re-import : -- --clean
+
+    When backuping ALL databases (without specifing a db), it's important on the restore to pass the main db as underlying restore command args (usualy postgres). Furthermore, passing --clean ensure the postgres role will be re-created on restore
+    Note: it's not recommended to backup all db, prefer specifying a db
+      wik-aio-backup backup pg -- --clean
+      wik-aio-backup restore pg -- postgres
+
 
 Author:
   Wikodit - Jeremy Trufier <jeremy@wikodit.fr>

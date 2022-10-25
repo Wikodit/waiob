@@ -1,5 +1,3 @@
-export IS_IN_TTY="$(tty -s && echo "1" || echo "0")"
-
 # logc <color> <level> <message>
 #   log "\033[35m" 3 "this is an error"
 logc () {
@@ -13,7 +11,7 @@ logc () {
   (( "${level}" > "${SYSLOG_LEVEL}" )) && return 0;
 
   # Redirect to stdout/stderr if in a tty
-  if [[ $IS_IN_TTY == "1" ]]; then
+  if [[ $IS_IN_TTY == "1" && ${WAIOB_SYSLOG_FORCE_COLOR:-"0"} == "1" ]]; then
     [[ "${SYSLOG_PREFIX:-"0"}" == "1" ]] && local prefix="$(date "+%F %T") [${levels[level]:-3}]\t"
     local std="${color}${prefix:-""}${msg}\033[0m"
     (( "${level}" > "3" )) && echo -e "${std}" || >&2 echo -e "${std}" # stdout or stderr

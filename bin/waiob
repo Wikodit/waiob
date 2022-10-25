@@ -5,4 +5,4 @@ export SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null
 export SRC_DIR="${SRC_DIR:-"${SCRIPT_DIR}/src"}"
 export LIB_DIR="${LIB_DIR:-"${SRC_DIR}/lib"}"
 
-source "${SCRIPT_DIR}/src/main.sh"
+source "${SRC_DIR}/main.sh"

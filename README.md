@@ -124,6 +124,7 @@ Note: those are considered permanent config options, and should not change throu
   * DB_MONGO_PASSWORD: the database password (@todo, for now put it in DB_MONGO_URI)
 
 - Other optional envs:
+  * WAIOB_SYSLOG_FORCE_COLOR: pass 1 to force using color even when not in a tty
   * WAIOB_SYSLOG_FACILITY: define facility for syslog, default to local0
   * WAIOB_SYSLOG_LEVEL: define logging level, default to 5 "notice" (0=emergency, 1=alert, 2=crit, 3=error, 4=warning, 5=notice, 6=info, 7=debug), --verbose override the level to 7
   * WAIOB_RESTIC_REPOSITORY_VERSION: default to 2 (restic >=v0.14), repository version

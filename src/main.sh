@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 set -euo pipefail
 # set -x # uncomment for xtrem debugging with high cafeine level requirement
 
@@ -5,10 +7,14 @@ source "${SRC_DIR}/includes.sh"
 
 # Launcher
 main () {
-  fetch_args $@
-
   [[ -z "$ACTION" ]] \
     && error "No action defined" 64
+
+  if [[ "${ACTION}" == "help" ]]; then
+    source "${SRC_DIR}/actions/help.sh"
+    call help
+    exit 0
+  fi
 
   if (( ${SYSLOG_LEVEL} >= 6 )) && [[ ! " ${RESTIC_ARGS[*]} " =~ " --verbose " ]]; then
     RESTIC_ARGS+=("--verbose")
@@ -25,16 +31,15 @@ main () {
   debug "\$RESTIC_REPOSITORY=$RESTIC_REPOSITORY"
   debug "\$RESTIC_REPOSITORY_VERSION=$RESTIC_REPOSITORY_VERSION"
 
-  validate_config_common
-
   if [[ ! -z "${ADAPTER}" ]]; then
-    [ -x "${SRC_DIR}/adapters/${ADAPTER}.sh" ] && source "${SRC_DIR}/adapters/${ADAPTER}.sh" || exception "no adapter found"
+    [ -r "${SRC_DIR}/adapters/${ADAPTER}.sh" ] && source "${SRC_DIR}/adapters/${ADAPTER}.sh" || exception "no adapter found"
   fi
 
-  [ -x "${SRC_DIR}/actions/${ACTION}.sh" ] && source "${SRC_DIR}/actions/${ACTION}.sh" || exception "no action found"
+  [ -r "${SRC_DIR}/actions/${ACTION}.sh" ] && source "${SRC_DIR}/actions/${ACTION}.sh" || exception "no action found"
   
   call "${ACTION}"
 }
 
 # Launch the script
-main $@
+fetch_args $@
+main

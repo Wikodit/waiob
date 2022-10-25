@@ -4,10 +4,10 @@ fetch_args () {
   while test $# -gt 0; do
     case "$1" in
       -h|--help)
-        call help
+        ACTION="help"
         shift
         ;;
-      backup|restore|list|prune|forget)
+      help|backup|restore|list|prune|forget)
         ACTION="$1"
         shift
         ;;

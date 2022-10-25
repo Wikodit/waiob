@@ -57,9 +57,13 @@ backup_pg () {
 
   local adapter_args=(\
     "-w" \
-    ${ADAPTER_ARGS[@]} \
-    # "--passfile=${option_file}"\ # not compatible with pg_dump
   )
+
+  [[ ! -z "${DB_CONFIG_HOST}" ]] && adapter_args+=("-h" "${DB_CONFIG_HOST}")
+  [[ ! -z "${DB_CONFIG_PORT}" ]] && adapter_args+=("-p" "${DB_CONFIG_PORT}")
+  [[ ! -z "${DB_CONFIG_USER}" ]] && adapter_args+=("-U" "${DB_CONFIG_USER}")
+
+  adapter_args+=(${ADAPTER_ARGS[@]})
   
   local db_filename="${DB_DATABASE:-"database"}.sql"
   local restic_args=(\
@@ -67,9 +71,6 @@ backup_pg () {
     "--stdin"\
     "--stdin-filename=${db_filename}"\
   )
-  
-  debug "adapter_args=${adapter_args[@]}"
-  debug "restic_args=${restic_args[@]}"
 
   local cmd
   if [[ -z ${DB_DATABASE:-""} ]]; then
@@ -80,6 +81,9 @@ backup_pg () {
     adapter_args+=(${DB_DATABASE})
     cmd="pg_dump"
   fi
+  
+  debug "adapter_args=${adapter_args[@]}"
+  debug "restic_args=${restic_args[@]}"
 
   $cmd ${adapter_args[@]} | restic ${restic_args[@]} backup
 }
@@ -100,12 +104,14 @@ restore_pg () {
   local restore_cmd="psql"
 
   local adapter_args=(\
-    # "-f" \ # pg_restore
-    # "-" \ # pg_restore
     "-w" \
-    ${ADAPTER_ARGS[@]} \
-    #"--passfile=${option_file}"\ # not compatible with pgrestore
   )
+
+  [[ ! -z "${DB_CONFIG_HOST}" ]] && adapter_args+=("-h" "${DB_CONFIG_HOST}")
+  [[ ! -z "${DB_CONFIG_PORT}" ]] && adapter_args+=("-p" "${DB_CONFIG_PORT}")
+  [[ ! -z "${DB_CONFIG_USER}" ]] && adapter_args+=("-U" "${DB_CONFIG_USER}")
+
+  adapter_args+=(${ADAPTER_ARGS[@]})
 
   local db_filename="${DB_DATABASE:-"database"}.sql"
   local restic_args=(\

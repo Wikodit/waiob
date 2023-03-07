@@ -5,10 +5,10 @@ prune () {
 
   local restic_args=(\
     ${PREPARED_RESTIC_ARGS[@]}\
-    ${WAIOB_RETENTION_POLICY[@]/#/--keep}\
+    ${WAIOB_RETENTION_POLICY[@]/#/--keep-}\
   )
 
   debug "restic_args=${restic_args[@]}"
-  
-  #call restic "${restic_args[@]}" forget
+
+  call restic "${restic_args[@]}" forget
 }

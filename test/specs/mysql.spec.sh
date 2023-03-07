@@ -111,6 +111,10 @@ test_mysql() {
     ${cmd} backup mysql ${WAIOB_EXTRA_ARGS[@]} -t $factory_mysql_tag -- --all-databases || throw "backup failed"
   }
 
+  prune() {
+    ${cmd} prune mysql ${WAIOB_EXTRA_ARGS[@]} || throw "prune failed"
+  }
+
   restore() {
     if [[ "${WAIOB_MODE}" == "files" ]]; then
       stop_db || throw "unable to stop db"
@@ -152,6 +156,31 @@ test_mysql() {
 
   # --- Test suite
 
+  test_prune() {
+    count1=$(restic list snapshots | wc -l)
+    prune
+    count2=$(restic list snapshots | wc -l)
+
+    if [ $count2 -ne $((count1-1)) ]
+    then
+      throw "Erreur : le nombre de snapshots n'a pas diminué de 1."
+    fi
+
+  }
+
+  test_mysql_prune() {
+    export WAIOB_RETENTION_POLICY='last=1' 
+
+    create_db
+    import_seed
+    it "should backup" backup
+    it "should backup" backup
+    remove_db
+
+    it "should prune" test_prune
+
+  }
+
   test_mysql_simple() {
     create_db
     import_seed
@@ -184,6 +213,10 @@ test_mysql() {
     before
     describe "simple backup/restore" test_mysql_simple
     after
+
+    # before
+    # describe "forget backups" test_mysql_prune
+    # after
 
     # before
     # describe "another backup after data change" test_mysql_after_change

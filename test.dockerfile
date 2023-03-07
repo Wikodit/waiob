@@ -18,6 +18,8 @@ FROM debian:bullseye-slim
 ENV PATH="${PATH}:/opt/waiob/bin"
 ENV LANG en_US.UTF-8
 
+COPY mysql_pubkey.asc /opt/mysql.gpg
+
 RUN \
   apt-get update && \
   apt-get install -y --no-install-recommends locales && \
@@ -33,7 +35,7 @@ RUN \
   && \
   wget -qO - https://www.mongodb.org/static/pgp/server-6.0.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/apt.mongodb.org.gpg >/dev/null &&\
   wget -qO - https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/apt.postgresql.org.gpg >/dev/null &&\
-  apt-key adv --keyserver pgp.mit.edu --recv-keys 3A79BD29 &&\
+  apt-key add /opt/mysql.gpg &&\
   echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/6.0 main" | tee /etc/apt/sources.list.d/mongodb-org-6.0.list &&\
   echo "deb http://repo.mysql.com/apt/debian/ bullseye mysql-8.0 mysql-tools" | tee /etc/apt/sources.list.d/mysql.list &&\
   echo "deb http://apt.postgresql.org/pub/repos/apt bullseye-pgdg main" | tee /etc/apt/sources.list.d/pgdg.list &&\

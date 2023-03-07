@@ -7,6 +7,8 @@ trap cleanup EXIT
 ####################################################################################################
 # Env variables
 #-----------------------------
+export IS_IN_TTY=$(tty -s && echo 1 || echo 0)
+
 export FACTORY_DIR="${TEST_DIR}/factories"
 export SPECS_DIR="${TEST_DIR}/specs"
 

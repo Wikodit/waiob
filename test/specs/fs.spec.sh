@@ -46,6 +46,10 @@ test_fs() {
     expect_file_to_have_content "${FS_ROOT}/${factory_fs_file1}" "${factory_fs_file1_content}"
   }
 
+  prune() {
+    ${cmd} prune fs ${WAIOB_EXTRA_ARGS[@]} || throw "prune failed"
+  }
+
   list() {
     last_tag="$(${cmd} list --json -f | jq -r '.[0].tags[0]')"
     expect_to_be "${last_tag}" "${factory_fs_tag}"
@@ -59,8 +63,31 @@ test_fs() {
     it "should restore" restore
   }
 
+    test_prune() {
+    
+    prune
+    count=$(restic list snapshots | wc -l)
+
+    if [ $count -ne 1 ]
+    then
+      throw "Erreur : le nombre de snapshots est différent de 1."
+    fi
+
+  }
+
+  test_fs_prune() {
+    export WAIOB_RETENTION_POLICY='last=1' 
+
+    it "should backup" backup
+    it "should backup" backup
+
+    it "should prune" test_prune
+
+  }
+
   prepare
   describe "- simple backup/restore" test_fs_simple
+  describe "prune" test_fs_prune
   teardown
 }
 

@@ -63,14 +63,13 @@ test_fs() {
     it "should restore" restore
   }
 
-    test_prune() {
-    
+  test_prune() {
     prune
     count=$(restic list snapshots | wc -l)
 
     if [ $count -ne 1 ]
     then
-      throw "Erreur : le nombre de snapshots est différent de 1."
+      throw "Error : Snapshot number is different than 1."
     fi
 
   }
@@ -87,7 +86,7 @@ test_fs() {
 
   prepare
   describe "- simple backup/restore" test_fs_simple
-  describe "prune" test_fs_prune
+  describe "- prune" test_fs_prune
   teardown
 }
 

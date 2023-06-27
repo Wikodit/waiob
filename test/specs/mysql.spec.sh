@@ -184,7 +184,7 @@ test_mysql() {
     before
     describe "simple backup/restore" test_mysql_simple
     after
-
+    
     # before
     # describe "another backup after data change" test_mysql_after_change
     # after

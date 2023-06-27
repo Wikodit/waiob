@@ -45,7 +45,7 @@ RUN \
     mongodb-org-tools \
     mysql-community-client \
     mysql-shell \
-    postgresql-client-14 \
+    postgresql-client-15 \
   && \
   apt-get autoremove -y && \
   apt-get clean && \

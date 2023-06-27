@@ -45,7 +45,7 @@ RUN \
     mongodb-org-tools \
     mysql-community-client \
     mysql-shell \
-    postgresql-client-14 \
+    postgresql-client-15 \
   && \
   apt-get autoremove -y && \
   apt-get clean
@@ -59,7 +59,7 @@ RUN \
   DEBIAN_FRONTEND=noninteractive apt-get -y --no-install-recommends install \
     mongodb-org \
     mysql-server \
-    postgresql-14 \
+    postgresql-15 \
     unzip &&\
   apt-get autoremove -y && \
   apt-get clean && \
